@@ -1,0 +1,1654 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main"></title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date/>
+						</imprint>
+					</monogr>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.6.2" ident="GROBID" when="2022-03-08T15:30+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>We propose Bayesian Deep Q-Networks (BDQN), a principled and a practical Deep Reinforcement Learning (DRL) algorithm for Markov decision processes (MDP). It combines Thompson sampling with deep-Q networks (DQN). Thompson sampling ensures efficient exploration-exploitation trade-off in high dimensions. It is typically carried out through posterior sampling over the model parameters, which makes it computationally expensive. To overcome this limitation, we directly incorporate uncertainty over the value (Q) function. Further, we only introduce randomness in the last layer (i.e. the output layer) of the DQN and use independent Gaussian priors on the weights. This allows us to efficiently carry out Thompson sampling through Gaussian sampling and Bayesian Linear Regression (BLR), which has fast closed-form updates. The rest of the layers of the Q network are trained through back propagation, as in a standard DQN. We apply our method to a wide range of Atari games in Arcade Learning Environments and compare BDQN to a powerful baseline: the double deep Q-network (DDQN). Since BDQN carries out more efficient exploration, it is able to reach higher rewards substantially faster: in less than 5M±1M interactions for almost half of the games to reach DDQN scores while a typical run of DDQN is 50-200M. We also establish theoretical guarantees for the special case when the feature representation is d-dimensional and fixed. We show that the Bayesian regret of posterior sampling RL (PSRL) and frequentist regret of the optimism in the face of uncertainly (OFU) after N time step are upper bounded by O(d √ N ) which are tight up-to logarithmic factors. To the best of our knowledge, these are the first model free theoretical guarantee for continuous state-action space MDP, beyond the tabular setting.</p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1">INTRODUCTION</head><p>One of the central challenges in reinforcement learning (RL) is to design efficient explorationexploitation trade-off that also scales to high-dimensional state and action spaces. Recently deep RL has shown good promise in being able scale to high-dimensional (continuous) spaces. These successes are mainly demonstrated in simulated domains where exploration is considered to be inexpensive and simple exploration strategies are deployed, e.g. ε-greedy which uniformly explores over all the actions with ε probability. Such exploration strategies inherently inefficient for complex high-dimensional environments. On the other hand, more sophisticated strategies have mostly been limited to low dimensional MDPs. For example, OFU is only practical when the domain is small enough to be represented with lookup tables for the Q-values <ref type="bibr" target="#b29">(Jaksch et al., 2010;</ref><ref type="bibr" target="#b13">Brafman &amp; Tennenholtz, 2003)</ref>.</p><p>An alternative to optimism-under-uncertainty is Thompson Sampling (TS), a general sampling and randomization approach (in both frequentist and Bayesian settings) <ref type="bibr">(Thompson, 1933)</ref>. Under the Bayesian framework, Thompson sampling maintains a prior distribution over the environmental models (i.e. models of reward and dynamics), and updating the posterior based on observations collected. An action is chosen from the posterior distribution, the belief, such that it maximizes the expected return. Thompson sampling has been observed to work significantly better than optimistic approaches in many low dimensional settings such as contextual bandits <ref type="bibr" target="#b15">(Chapelle &amp; Li, 2011)</ref>, small MDPs <ref type="bibr" target="#b44">(Osband et al., 2013)</ref> and also has strong theoretical bounds <ref type="bibr" target="#b51">(Russo &amp; Van Roy, 2014a;</ref><ref type="bibr">b;</ref><ref type="bibr" target="#b4">Agrawal &amp; Goyal, 2012;</ref><ref type="bibr" target="#b44">Osband et al., 2013;</ref><ref type="bibr" target="#b1">Abbasi-Yadkori &amp; Szepesvári, 2015)</ref>.</p><p>In the MDP setting, (model-based) Thompson Sampling involves sampling the parameters of reward and dynamics models, performing MDP planning using the sampled model and then computing the policy <ref type="bibr" target="#b56">(Strens, 2000;</ref><ref type="bibr" target="#b44">Osband et al., 2013;</ref><ref type="bibr" target="#b43">Osband &amp; Van Roy, 2014b;</ref><ref type="bibr">a)</ref>. However, the computational costs of posterior sampling and planning scales as cubic in the problem dimension, which makes it intractable for large MDPs. Therefore, some form of function approximation is required to scale Thompson Sampling to high dimensions, and this can be either of the model, the Q-value function, or the policy. To address this, <ref type="bibr" target="#b45">Osband et al. (2014)</ref> introduced randomized least-squares value iteration (RLSVI) which combines linear value function approximation with Bayesian regression to directly sample the value-function weights from a distribution. The authors prove a regret bound for this approach in tabular MDPs. This has been extended to continuous spaces by <ref type="bibr" target="#b46">Osband et al. (2016)</ref>, where deep networks are used to approximate the Q function. Through a bootstrapped-ensemble approach, several deep-Q network (DQN) models are trained in parallel to approximate the posterior distribution. Other works use the posterior distribution over the parameters of each node in the network and employ variational approximation <ref type="bibr" target="#b38">(Lipton et al., 2016b)</ref> or use noisy networks <ref type="bibr" target="#b23">(Fortunato et al., 2017)</ref>. These approaches significantly increase the computation cost compared to the standard DQN. For instance, the bootstrapped-ensemble incurs a computation overhead that is linear in the number of bootstrap models. Moreover, despite principled design of the methods in the above works, they only produced modest gains over DQN in empirical studies.</p><p>Contribution 1 -Design of BDQN: We introduce Bayesian Deep Q-Network (BDQN), a Thompsonsampling algorithm for deep RL. It is a simple approach that extends randomized least-squares value iteration <ref type="bibr" target="#b45">(Osband et al., 2014)</ref> to deep networks. We introduce stochasticity only in the last layer of the Q-network using independent Gaussian priors on the weights. This allows us to do efficient approximate Thompson sampling 1 using Bayesian linear regression (BLR), which has fast closedform updates and sampling from the resulting posterior distribution. The rest of the Q-network is trained through usual back propagation.</p><p>Contribution 2 -Strong empirical results for BDQN: We test BDQN on a wide range of Atari games <ref type="bibr" target="#b12">(Bellemare et al., 2013;</ref><ref type="bibr" target="#b39">Machado et al., 2017)</ref>, and compare our results to a powerful baseline: Double DQN (DDQN) <ref type="bibr">(Van Hasselt et al., 2016)</ref> a bias-reduced extension of DQN. BDQN and DDQN use the same network architecture, and follow the same target objective, and differ only in the way they select actions: DDQN uses ε-greedy exploration while BDQN performs (approximate) Thompson sampling.</p><p>We found that BDQN is able to reach much higher cumulative rewards, and also at a higher speed, compared to DDQN on all the tested games. We also found that BDQN can be trained with much higher learning rates compared to DDQN. This is intuitive since BDQN has better exploration strategy. The cumulative reward (score) for BDQN at the end of training improves by a median of 300% with a maximum of 80K% in these games. Also, BDQN has 300% ± 40% (mean and standard deviation) improvement over these games on area under the performance measure. This can be considered as a surrogate for sample complexity and regret. Indeed, no single measure of performance provides a complete picture of an algorithm, and we present detailed experiments in Section 5.</p><p>In terms of computational cost, BDQN is only slightly more expensive compared to DQN and DDQN. For the DQN in Atari games, this is the cost of inverting a 512 × 512 matrix every 100,000 time steps, which is negligible. On the other hand, more sophisticated Bayesian RL techniques are significantly more expensive and have not lead to large gains over DQN and DDQN <ref type="bibr" target="#b46">(Osband et al., 2016)</ref>.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Contribution 3 -Tight Bayesian and frequentist regret upper bounds for continuous MDPs:</head><p>We establish theoretical guarantees for the special case when the feature representation is fixed (i.e. all layers except the last), and not learnt. We consider episodic MDPs with continuous space of states and actions such that the Q-function is a linear function of a given d-dimensional feature map. We show that when PSRL and OFUare deployed, respectively, the Bayesian regret and frequentist regret after N time step are upper bounded by O(d √ N ), which is shown to be tight up-to logarithmic factors. Since linear bandits are a special case of episodic continuous MDPs (with horizon length 1), it implies that our regret bounds are tight in the dimension d and in the number of episodes. The Bayesian bound matches the Bayesian regret bound of linear bandits <ref type="bibr" target="#b51">(Russo &amp; Van Roy, 2014a)</ref> and the frequentist bound matches the frequentist regret bound for linear bandits . To the best of our knowledge, these are the first model free theoretical guarantee for continuous MDPs beyond the tabular setting. Thus, our proposed approach has several desirable features -faster learning and better sample complexity due to targeted exploration, negligible computational overhead due to simplicity, significant improvement in experiments, and tight theoretical bounds.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2">THOMPSON SAMPLING VS ε-GREEDY AND BOLTZMANN EXPLORATION</head><p>In a value approximation RL algorithm, there are different ways to manage the explorationexploitation trade-off. DQN uses a naive ε-greedy for exploration, where with ε probability it chooses a random action and with 1 − ε probability it chooses the greedy action based on the estimated Q function. Note that there are only point estimates of the Q function in DQN. In contrast, our proposed Bayesian approach BDQN maintains uncertainties over the estimated Q function, and employs it to carry out Thompson Sampling based exploration. Here, we demonstrate the fundamental benefits of Thompson Sampling over ε-greedy and Boltzmann exploration strategies using simple examples. In Table <ref type="table" target="#tab_0">1</ref>, we list the three strategies and their properties. ε-greedy is the simplest exploration strategy since it is uniformly random over all the non-greedy actions. Boltzmann exploration is an intermediate strategy since it uses the estimated Q function to sample the actions. However, it does not maintain uncertainties over the Q function estimation. In contrast, Thompson sampling also incorporates uncertainties over Q estimation and utilizes most information for exploration strategy.</p><p>Consider the example in Figure <ref type="figure">1</ref>(a) with current estimates and uncertainties of the Q function over different actions. ε-greedy is wasteful since it assigns uniform probability to explore over 5 and 6, which are obviously sub-optimal when the uncertainty estimates are available. In this setting, a possible remedy is Boltzmann exploration since it assigns lower probability to actions 5 and 6 but randomizes with almost the same probabilities over the remaining actions. However, Boltzmann exploration is sub-optimal in settings where there is high variances. For example if the current Q estimate is according to Figure <ref type="figure">1</ref>(b), then Boltzmann exploration assigns almost equal probability to actions 5 and 6, even though action 6 has much higher uncertainty and needs to be explored more. Thus, both ε-greedy and Boltzmann exploration strategies are sub-optimal since they do not maintain an uncertainty estimate over the Q function estimation. In contrast, Thompson sampling uses both estimated Q function and its uncertainty estimates to carry out the most efficient exploration.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3">BAYESIAN DEEP Q-NETWORKS</head><p>Consider an MDP M as a tuple X , A, P, P 0 , R, γ , with state space X , action space A, transition kernel P , initial state distribution P 0 , accompanied with reward function of R, and discount factor 0 ≤ γ &lt; 1. In value based model free RL, the core of most prominent approaches is to learn the Q-function through minimizing the Bellman residual <ref type="bibr" target="#b33">(Lagoudakis &amp; Parr, 2003;</ref><ref type="bibr" target="#b6">Antos et al., 2008</ref>)</p><formula xml:id="formula_0">L(Q) = E π (Q(x, a) − r − γQ(x ,â)) 2<label>(1)</label></formula><p>and temporal difference (TD) update <ref type="bibr" target="#b57">(Tesauro, 1995)</ref> where the tuple (x, a, r, x ) consists of a consecutive experiences under a behavior policy π. <ref type="bibr" target="#b40">Mnih et al. (2015)</ref>  </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>(b)</head><p>Figure <ref type="figure">1</ref>: Thompson Sampling vs ε-greedy and Boltzmann exploration. (a) ε-greedy is wasteful since it assigns uniform probability to explore over 5 and 6, which are obviously sub-optimal when the uncertainty estimates are available. Boltzmann exploration randomizes over actions even if the optimal action is identifies. (b) Boltzmann exploration does not incorporate uncertainties over the estimated action-values and chooses actions 5 and 6 with similar probabilities while action 6 is significantly more uncertain. Thomson Sampling is a simple remedy to all these issues. Store transition (x t , a t , r t , x t+1 ) in the replay buffer 9:</p><p>Sample a random minibatch of transitions (x τ , a τ , r τ , x τ +1 ) from replay buffer 10: <ref type="bibr">â)</ref>, and approaches the regression on the empirical estimates of the loss L(Q, Q target );</p><formula xml:id="formula_1">y τ ← r τ terminal x τ +1 r τ +w target a φ θ target (x τ +1 ),â := arg max a w a φ θ (x τ +1 )non-terminal x τ +1 11: θ ← θ − η • ∇ θ (y τ − w aτ φ θ (x τ )) 2 y = r + γQ target (x ,</formula><formula xml:id="formula_2">L(Q, Q target ) = E π (Q(x, a) − y) 2 (2)</formula><p>i.e., L(Q, Q target ). A DQN agent, once in a while updates the Q target network and sets it to the Q network, follows the regression in Eq.2 with the new target value and provides a biased estimator of the target. To mitigate the bias in this estimator, <ref type="bibr">Van Hasselt et al. (2016)</ref> proposes DDQN and instead useâ = arg max a Q target (x , a ). We deploy this approach for the rest of this paper.</p><p>DQN architecture consists of a deep neural network where the Q-function is approximated as a linear function of the feature representation layer φ θ (x) ∈ R d parametrized by θ, i.e., for all pairs of state-action ∀a ∈ A, x ∈ X , we have Q(x, a) = φ θ (x) w a with w a ∈ R d , the output layer. Consequently, the target model has the same architecture as the Q, and consists of φ θ target (•) ∈ R d , the feature representation of target network, and w target a , ∀a ∈ A the target weight. For a given tuple of experiences (x, a, r, x ), andâ = arg max a φ θ target w target a Q(x, a) = φ θ (x) w a → y := r + γφ θ target (x )w targetâ</p><p>The regression in Eq. 2 induces linear regression in the learning of the output layer, i.e., w a 's. In this work, we utilize the DQN architecture and instead propose to use BLR <ref type="bibr" target="#b49">(Rasmussen &amp; Williams, 2006)</ref> in learning of the output layer. Through BLR, we efficiently approximate the distribution over the Q-values, capture the uncertainty over the Q-fucntion estimation, and design a efficient exploration and exploitation strategy using Thompson Sampling.w a w* a w a By deploying BLR on the feature representation layer, we approximate the posterior distribution of each w a , resulting in the posterior distribution of the Q-function. As in BLR methods, we maintain a Gaussian prior N (0, σ 2 I) with the target value y ∼ w a φ θ (x) + for each weight vector where ∼ N (0, σ 2 ) is an i.i.d. Gaussian noise.</p><p>Given a experience replay buffer D = {x τ , a τ , y τ } D τ =1 , we construct |A| (number of actions) disjoint datasets D a for each action with a τ = a. For each action a, we construct a matrix Φ θ a ∈ R d×|Da| , the concatenation of feature vectors {φ θ (x i )} |Da| i=1 , and y a ∈ R |Da| , the concatenation of target values in set D a . Finally, we approximate the posterior distribution of w a as follows:</p><formula xml:id="formula_3">w a ∼ N (w a , Cov a ) , w a := 1 σ 2 Cov a Φ θ a y a , Cov a := 1 σ 2 Φ θ a Φ θ a + 1 σ 2 I −1</formula><p>(3) Fig. <ref type="figure" target="#fig_1">2</ref> expresses that the covariance matrix induces an ellipsoid around the estimated mean of the approximated posterior and samples drawn through Thompson Sampling are mainly close to this mean.</p><formula xml:id="formula_4">A sample of Q(x, a) is w a φ θ (x)</formula><p>where w a is drawn from the posterior distribution Fig. <ref type="figure" target="#fig_1">2</ref>. In BDQN, every T sample times step, we draw a new w a , ∀a ∈ A and follow the resulting policy, i.e., a TS := max a w a φ θ (x). We simultaneously train the feature network under the loss (y τ − w aτ φ θ (x τ )) 2 with x τ , a τ , y τ experiences from the replay buffer i.e.</p><formula xml:id="formula_5">θ ← θ − η • ∇ θ (y τ − w aτ φ θ (x τ ) aτ ) 2 (4)</formula><p>We update the target network every T target steps and set θ target to θ. With the period of T Bayes target , we update the posterior distribution using a minibatch of B randomly chosen experiences in the replay buffer, and set the w target a = w a , ∀a ∈ A which is the mean of the posterior distribution( more details in Section A.5. We describe BDQN algorithm in Alg. 1. for h = 0 to the end of episode do 5:</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4">BAYESIAN REGRET BOUND</head><p>Follow π t policy induced by ω t 6:</p><p>Update the posterior Algorithm 3 OFU 1: Input: σ, λ and δ 2: for episode = 1,2,. . . do 3:</p><p>choose optimistic π t in C t−1 (δ)</p><p>4:</p><p>for h = 1 to the end of episode do 5:</p><p>Follow π t policy 6:</p><p>Update the confidence C t (δ)</p><p>In this section we provide the analysis of Bayesian regret upper bound of PSRL Alg. 2 and frequentis regret upper bound of optimism Alg. 3 when the feature representation is given and fixed. Consider a finite horizon stochastic MDP M := X , A, P, P 0 , R, γ, H , an MDP with horizon length H and 0 ≤ γ ≤ 1. We consider a class of MDPs where the optimal Q-function is a linear transformation of φ(•, •) := X × A → R d , i.e., Q ω * π * (x, a) := φ(x, a) ω * , ∀x, a ∈ X × A, where ω * ∈ R d and π * : X → A as π * (x) := arg max a∈A Q ω * π * (x, a). Let V ω * π * denote the corresponding value function. The following is the generative model of the environment; R := ΨR = Φ(x {1:H} , a {1:H} )ω * +Ψν(x {1:H} , a {1:H} ), where , Ψ :=</p><formula xml:id="formula_6">    1 γ γ 2 . . . γ H−1 0 1 γ . . . γ H−2 . . . . . . . . . . . . . . . 0 . . . . . . . . . 1    </formula><p>The vector R ∈ R H is the random vector of rewards in an episode and R ∈ R H the corresponding per step return. x {1:H} , a {1:H} is the sequence of states and actions, the matrix Φ(x {1:H} , a {1:H} ) ∈ R H×d is row-wise concatenation of their features and ν(x {1:H} , a {1:H} ) ∈ R d the noise. Alg. 2 maintains a prior over the vector ω * and updating the posterior over time. At the beginning of an episode t, the agent draws ω t from the posterior, and follows its induced policy π t where a := arg max a∈A φ (x, a)ω t , ∀x ∈ X . Alg. 3, at the beginning of t'th episode, exploits the so-far collected samples and estimates ω * up to a high probability confidence interval C t−1 i.e., ω * ∈ C t with high probability. At each time step h, given a state x h t , the agent follows the optimistic policy; π t (x h t ) = arg max a∈A max ω∈Ct−1 φ (X h t , a)ω. Through exploration and exploitation, we show that the confidence set C t shrinks with the rate of O 1/ √ t resulting in less and less per step regret (Lemma 1 in Appendix B). Similar to the linear bandit , consider the following generic assumptions,</p><p>• The noise vector ν is sub-Gaussian vector with parameter σ. (Assumption 1 in Appendix B) For any prior and likelihood satisfying the mentioned assumptions, we have;</p><formula xml:id="formula_7">• ω * 2 ≤ L ω</formula><p>Theorem 1 (Bayesian Regret). For an episodic MDP with episode length H, γ = 1, feature mapping φ(x, a) ∈ R d , the Thompson sampling on ω, Alg. 2, after T episodes, guarantees;</p><formula xml:id="formula_8">BayesReg T : = E T t V ω * π * − V ω * πt = O d √ T H log(T )</formula><p>Proof is Appendix B.2. Note that N = T H is the number of agent-environment interactions.</p><p>Theorem 2 (Frequentist Regret). For an episodic MDP with episode length H, γ = 1, feature mapping φ(x, a) ∈ R d , the optimism on ω, Alg. 3, after T episodes, guarantees;</p><formula xml:id="formula_9">Reg T : = E T t V ω * π * − V ω * πt |ω * = O d √ T H log(T )</formula><p>Proof is given in the Appendix B.1.</p><p>Remark 1. For any discount factor γ, 0 ≤ γ ≤ 1, both theorems 1 and 2 hold if we replace √ H with a smaller constant [1, γ, γ 2 , . . . , γ H−1 ] 2 in the theorem statements (see Section B.3).</p><p>These bounds are similar to those in linear bandits <ref type="bibr" target="#b51">Russo &amp; Van Roy, 2014a)</ref> and linear quadratic control </p><formula xml:id="formula_10">, i.e. O(d √ T )</formula><p>. Since for H = 1, this problem reduces to linear bandit and for linear bandit the lower bound is Ω(d √ T ) therefore, our bound is order optimal in d and T .</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5">EXPERIMENTS</head><p>We apply BDQN on a variety of Atari games using the Arcade Learning Environment <ref type="bibr" target="#b12">(Bellemare et al., 2013)</ref> through OpenAI Gym 2 <ref type="bibr" target="#b14">(Brockman et al., 2016)</ref>. As a baseline, we run the DDQN algorithm and evaluate BDQN on the measures of sample complexity and score. All the implementations are coded in MXNet framework <ref type="bibr" target="#b16">(Chen et al., 2015)</ref>. The details on architecture, Appendix A.1, learning rate Appendix A.3, computation A.4. In Appendix A.2 we describe how we spend less than two days on a single game for the hyper parameter choices which is another evidence of significance of BDQN.  <ref type="bibr" target="#b46">(Osband et al., 2016)</ref>, CTS, Pixel, Reactor <ref type="bibr" target="#b48">(Ostrovski et al., 2017)</ref> are borrowed from the original papers. For NoisyNet <ref type="bibr" target="#b23">(Fortunato et al., 2017)</ref>, the scores of NoisyDQN are reported. Sample complexity, SC: the number of samples the BDQN requires to beat the human score <ref type="bibr" target="#b40">(Mnih et al., 2015)</ref>(" − " means BDQN could not beat human score). SC + : the number of interactions the BDQN requires to beat the score of DDQN + . Baselines: We implemented DDQN and BDQN exactly the same way as described in <ref type="bibr">Van Hasselt et al. (2016)</ref>. We also attempted to implement a few other deep RL methods that employ strategic exploration, e.g., <ref type="bibr" target="#b46">(Osband et al., 2016;</ref><ref type="bibr" target="#b11">Bellemare et al., 2016)</ref>. Unfortunately we encountered several implementation challenges where neither code nor the implementation details was publicly available. Despite the motivation of this work on sample complexity, since we do not have access to the performance plots of these methods, the least is to report their final scores. To try to illustrate the performance of our approach we instead, extracted the best reported scores from a number of state-of-the-art deep RL methods and include them in Table <ref type="table" target="#tab_3">2</ref>, which is the only way to bring a comparison. We compare against DDQN, as well as DDQN + which is the reported scores of DDQN in <ref type="bibr">Van Hasselt et al. (2016)</ref> at evaluation time where the ε = 0.001. Furthermore, we compared against scores of Bootstrap DQN <ref type="bibr" target="#b46">(Osband et al., 2016)</ref>, NoisyNet <ref type="bibr" target="#b23">(Fortunato et al., 2017)</ref>, CTS, Pixel, Reactor <ref type="bibr" target="#b48">(Ostrovski et al., 2017)</ref> which are borrowed from the original papers. For NoisyNet, the scores of NoisyDQN are reported. We also provided the sample complexity, SC: the number of interactions BDQN requires to beat the human score <ref type="bibr" target="#b40">(Mnih et al., 2015)</ref>(" − " means BDQN could not beat human score) and SC + : the number of interactions the BDQN requires to beat the score of DDQN + . Note that these are not perfect comparisons, as there are additional details that are not included in the papers, i.e. it is hard to just compare the reported results (an issue that has been discussed extensively recently, e.g. <ref type="bibr" target="#b27">(Henderson et al., 2017)</ref>). <ref type="bibr">4</ref> . Moreover, when the regret analysis of an algorithm is considered, no evaluation phase required, and the reported results of BDQN are those while exploration. It is worth noting that, the scores during evaluation are much higher than those during the exploration and exploitation period, Appendix A.8.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Results:</head><p>The results are provided in Fig. <ref type="figure" target="#fig_3">3</ref>. We observe that BDQN significantly improve the sample complexity of DDQN and reaches the highest score of DDQN in much fewer number of interactions than DDQN needs. We expected BDQN, due to it better exploration-exploitation strategy, to improve the regret and enhance the sample complexity, but we also observed a significantly improvement in scores. It worth noting that since BDQN is designed to minimize the regret, and the study in Fig. <ref type="figure" target="#fig_3">3</ref> also for sample complexity analysis, either of the reported BDQN and DDQN scores are while exploration. For example, DDQN gives score of 18.82 during the learning phase, but setting ε to zero, it mostly gives the score of 21. In addition to the Table <ref type="table" target="#tab_3">2</ref>, we also provided the score ratio as well area under the performance plot ratio comparisons in Table <ref type="table" target="#tab_7">3</ref>. For the game Atlantis, DDQN + gives score of 64.67k during the evaluation phase, while BDQN reaches score of 3.24M after 20M interactions. As it is been shown in Fig. <ref type="figure" target="#fig_3">3</ref>, BDQN saturates for Atlantis after 20M interactions. We realized that BDQN reaches the internal OpenAIGym limit of max episode, where relaxing it improves score after 15M steps to 62M , Appendix A.7. We observe that BDQN immediately learns significantly better policies due to its efficient explore/exploit in a much shorter period of time. Since BDQN on game Atlantis promise a big jump around time step 20M , we ran it five more times in order to make sure it was not just a coincidence Appendix A.7 Fig. <ref type="figure" target="#fig_6">7</ref>. For the game Pong, we ran the experiment for a longer period but just plotted the beginning of it in order to observe the difference. Due to cost of deep RL methods, for some games, we run the experiment until a plateau is reached.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="6">RELATED WORK</head><p>The complexity of the exploration-exploitation trade-off has been deeply investigated in RL literature for both continuous and discrete MDPs <ref type="bibr" target="#b32">(Kearns &amp; Singh, 2002;</ref><ref type="bibr" target="#b13">Brafman &amp; Tennenholtz, 2003;</ref><ref type="bibr" target="#b7">Asmuth et al., 2009;</ref><ref type="bibr" target="#b31">Kakade et al., 2003;</ref><ref type="bibr" target="#b41">Ortner &amp; Ryabko, 2012</ref>  <ref type="bibr" target="#b5">(Anandkumar et al., 2014)</ref>. Furthermore, <ref type="bibr" target="#b10">Bartók et al. (2014)</ref> tackles a general case of partial monitoring games and provides minimax regret guarantee. For linear quadratic models OFU is deployed to provide an optimal regret bound .</p><p>In multi-arm bandit, there are compelling empirical pieces of evidence that Thompson Sampling sometimes provides better results than optimism-under-uncertainty approaches <ref type="bibr" target="#b15">(Chapelle &amp; Li, 2011)</ref>, while also the performance guarantees are preserved <ref type="bibr" target="#b51">(Russo &amp; Van Roy, 2014a;</ref><ref type="bibr" target="#b4">Agrawal &amp; Goyal, 2012)</ref>. A natural adaptation of this algorithm to RL, posterior sampling RL (PSRL) <ref type="bibr" target="#b56">Strens (2000)</ref> also shown to have good frequentist and Bayesian performance guarantees <ref type="bibr" target="#b44">(Osband et al., 2013;</ref><ref type="bibr" target="#b1">Abbasi-Yadkori &amp; Szepesvári, 2015)</ref>.</p><p>Even though the theoretical RL addresses the exploration and exploitation trade-offs, these problems are still prominent in empirical reinforcement learning research <ref type="bibr" target="#b40">(Mnih et al., 2015;</ref><ref type="bibr" target="#b3">Abel et al., 2016;</ref><ref type="bibr" target="#b9">Azizzadenesheli et al., 2016b)</ref>. On the empirical side, the recent success in the video games has sparked a flurry of research interest. Following the success of Deep RL on Atari games <ref type="bibr" target="#b40">(Mnih et al., 2015)</ref> and the board game Go <ref type="bibr" target="#b54">(Silver et al., 2017)</ref>, many researchers have begun exploring practical applications of deep reinforcement learning (DRL). Some investigated applications include, robotics <ref type="bibr" target="#b35">(Levine et al., 2016)</ref>, self-driving cars <ref type="bibr" target="#b53">(Shalev-Shwartz et al., 2016)</ref>, and safety <ref type="bibr" target="#b37">(Lipton et al., 2016a)</ref>. Inevitably for PSRL, the act of posterior sampling for policy or value is computationally intractable with large systems, so PSRL can not be easily leveraged to high dimensional problems <ref type="bibr" target="#b26">(Ghavamzadeh et al., 2015;</ref><ref type="bibr" target="#b22">Engel et al., 2003;</ref><ref type="bibr" target="#b20">Dearden et al., 1998;</ref><ref type="bibr">Tziortziotis et al., 2013)</ref>. To remedy these failings  consider the use of randomized value functions. For finite state-action space MDP, <ref type="bibr" target="#b45">Osband et al. (2014)</ref> propose posterior sampling directly on the space of Q-functions and provide a strong Bayesian regret bound guarantee. To approximate the posterior, they use BLR on one-hot encoding of state-action and improve the computation complexity of PSRL. The approach deployed in BDQN is strongly related and similar to this work, and is a generalization to continues state-action space MDPs.</p><p>To combat the computational and scalability shortcomings, <ref type="bibr" target="#b46">Osband et al. (2016)</ref> suggests a bootstrapped-ensemble approach that trains several models in parallel to approximate the posterior distribution. Other works suggest using a variational approximation to the Q-networks <ref type="bibr" target="#b38">(Lipton et al., 2016b)</ref> or a concurrent work on noisy network <ref type="bibr" target="#b23">(Fortunato et al., 2017)</ref>. However, most of these approaches significantly increase the computational cost of DQN and neither approach produced much beyond modest gains on Atari games. Interestingly, the Bayesian approach as a technique for learning a neural network has been deployed for object recognition and image caption generation where its significant advantage has been verified <ref type="bibr" target="#b55">Snoek et al. (2015)</ref>.</p><p>Concurrently, <ref type="bibr" target="#b34">Levine et al. (2017)</ref> proposes least squares temporal difference which learns a linear model on the feature representation in order to estimate the Q-function while ε-greedy exploration is employed and improvement on 5 tested Atari games is provided. Out of these 5 games, one is common with our set of 15 games which BDQN outperform it by factor of 360% (w.r.t. the score reported in their paper). As motivated by theoretical understanding, our empirical study shows that performing Bayesian regression instead, and sampling from the result, can yield a substantial benefit, indicating that it is not just the higher data efficiency at the last layer, but that leveraging an explicit uncertainty representation over the value function is of substantial benefit.</p><p>Drop-out, as another randomized exploration method is proposed by <ref type="bibr" target="#b24">Gal &amp; Ghahramani (2016)</ref> but <ref type="bibr" target="#b46">Osband et al. (2016)</ref> investigates the sufficiency of the estimated uncertainty and hardness in driving suitable exploitation out of it. We also implemented the dropout version of DDQN and compared its performance against BDQN, DDQN, DDQN + , and the random policy (the policy which chooses actions uniformly at random) but did not observe much gain beyond the performance of the random policy (See section A.6). As stated before, in spite of the novelties proposed by the methods, mentioned in this section, neither of them, including TSbased approaches, produced much beyond modest gains on Atari games while BDQN provides significant improvements in terms of both sample complexity and final performance.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="7">CONCLUSION</head><p>In this work we proposed BDQN, a practical Thompson sampling based RL algorithm which provides efficient exploration/exploitation in a computationally efficient manner. It involved making simple modifications to the DDQN architecture by replacing the last layer with Bayesian linear regression. Under the Gaussian prior, we obtained fast closed-form updates for the posterior distribution. We demonstrated significantly faster training and much better performance in many games compared to the reported results of a wide number of state-of-the-art baselines. We also established theoretical guarantees for an episodic MDP with continuous state and action spaces in the special case where the feature representation is fixed. We derived an order-optimal frequentist and Bayesian regret bound of O(d √ N ) after N time steps.</p><p>In future, we plan to extend the analysis to the more general frequentist setting. The current theoretical guarantees are mainly developed for the class of linear functions. For general class of functions, optimism in the face of uncertainty is deployed to guarantee a tight probably approximately correct (PAC) bound <ref type="bibr" target="#b30">(Jiang et al., 2016)</ref> but the proposed algorithm requires solving a NP-hard problem at each iteration. We aim to further provide a tight theoretical bound through Thomson sampling while also preserving computational feasibility.</p><p>William R Thompson. On the likelihood that one unknown probability exceeds another in view of the evidence of two samples. Biometrika, 1933. </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>A APPENDIX</head><p>In the main text, for simplicity, we use the terms "BLR" for i.i.d. samples and BLR for non i.i.d. samples exchangeable, even though, technically, the do not have equal meaning. In RL, the data is not i.i.d, and we extend the BLR to non i.i.d. setting by deploying additional Martingale type argument and handles the data with temporal dependency. The input to the network part of BDQN is 4 × 84 × 84 tensor with a rescaled and averaged over channels of the last four observations. The first convolution layer has 32 filters of size 8 with a stride of 4. The second convolution layer has 64 filters of size 4 with stride 2. The last convolution layer has 64 filters of size 3 followed by a fully connected layer with size 512. We add a BLR layer on top of this.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>A.2 CHOICE OF HYPER-PARAMETERS:</head><p>For BDQN, we set the values of W target to the mean of the posterior distribution over the weights of BLR with covariances Cov and draw W from this posterior. For the fixed W and W target , we randomly initialize the parameters of network part of BDQN, θ, and train it using RMSProp, with learning rate of 0.0025, and a momentum of 0.95, inspired by <ref type="bibr" target="#b40">(Mnih et al., 2015)</ref> where the discount factor is γ = 0.99, the number of steps between target updates T target = 10k steps, and weights W are re-sampled from their posterior distribution every T sample steps. We update the network part of BDQN every 4 steps by uniformly at random sampling a mini-batch of size 32 samples from the replay buffer. We update the posterior distribution of the weight set W every T Bayes target using mini-batch of size B (if the size of replay buffer is less than B at the current step, we choose the minimum of these two ), with entries sampled uniformly form replay buffer. The experience replay contains the 1M most recent transitions. Further hyper-parameters are equivalent to ones in DQN setting.</p><p>For the BLR, we have noise variance σ , variance of prior over weights σ, sample size B, posterior update period T Bayes target , and the posterior sampling period T sample . To optimize for this set of hyper-parameters we set up a very simple, fast, and cheap hyper-parameter tuning procedure which proves the robustness of BDQN. To find the first three, we set up a simple hyper-parameter search.</p><p>We used a pretrained DQN model for the game of Assault, and removed the last fully connected layer in order to have access to its already trained feature representation. Then we tried combination of B = {T target , 10 • T target }, σ = {1, 0.1, 0.001}, and σ = {1, 10} and test for 1000 episode of the game. We set these parameters to their best B = 10 • T target , σ = 0.001, σ = 1.</p><p>The above hyper-parameter tuning is cheap and fast since it requires only a few times the B number of forwarding passes. For the remaining parameters, we ran BDQN ( with weights randomly initialized) on the same game, Assault, for 5M time steps, with a set of T Bayes target = {T target , 10 • T target } and T sample = { T target 10 , T target 100 }, where BDQN performed better with choice of T Bayes target = 10 • T target . For both choices of T sample , it performs almost equal and we choose the higher one to reduce the computation cost. We started off with the learning rate of 0.0025 and did not tune for that. Thanks to the efficient Thompson sampling exploration and closed form BLR, BDQN can learn a better policy in an even shorter period of time. In contrast, it is well known for DQN based methods that changing the learning rate causes a major degradation in the performance (Fig. <ref type="figure" target="#fig_4">4</ref>). The proposed hyper-parameter search is very simple and an exhaustive hyper-parameter search is likely to provide even better performance.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>A.3 LEARNING RATE:</head><p>It is well known that DQN and DDQN are sensitive to the learning rate and change of learning rate can degrade the performance to even worse than random policy. We tried the same learning rate as BDQN, 0.0025, for DDQN and observed that its performance drops. Fig. <ref type="figure" target="#fig_4">4</ref> shows that the DDQN with higher learning rates learns as good as BDQN at the very beginning but it can not maintain the rate of improvement and degrade even worse than the original DDQN with learning rate of 0.00025. For a given period of game time, the number of the backward pass in both BDQN and DQN are the same where for BDQN it is cheaper since it has one layer (the last layer) less than DQN. In the sense of fairness in sample usage, for example in duration of 10 • T Bayes target = 100k, all the layers of both BDQN and DQN, except the last layer, sees the same number of samples, but the last layer of BDQN sees 16 times fewer samples compared to the last layer of DQN. The last layer of DQN for a duration of 100k, observes 25k = 100k/4 (4 is back prob period) mini batches of size 32, which is 16 • 100k, where the last layer of BDQN just observes samples size of B = 100k. As it is mentioned in Alg. 1, to update the posterior distribution, BDQN draws B samples from the replay buffer and needs to compute the feature vector of them. Therefore, during the 100k interactions for the learning procedure, DDQN does 32 * 25k of forward passes and 32 * 25k of backward passes, while BDQN does same number of backward passes (cheaper since there is no backward pass for the final layer) and 36 * 25k of forward passes. One can easily relax it by parallelizing this step along the main body of BDQN or deploying on-line posterior update methods.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>A.5 THOMPSON SAMPLING FREQUENCY:</head><p>The choice of Thompson sampling update frequency can be crucial from domain to domain. Theoretically, we show that for episodic learning, the choice of sampling at the beginning of each episode, or a bounded number of episodes is desired. If one chooses T sample too short, then computed gradient for backpropagation of the feature representation is not going to be useful since the gradient get noisier and the loss function is changing too frequently. On the other hand, the network tries to find a feature representation which is suitable for a wide range of different weights of the last layer, results in improper waste of model capacity. If the Thompson sampling update frequency is too low, then it is far from being Thompson sampling and losses the randomized exploration property. We are interested in a choice of T sample which is in the order of upper bound on the average length of each episode of the Atari games. The current choice of T sample is suitable for a variety of Atari games since the length of each episode is in range of O(T sample ) and is infrequent enough to make the feature representation robust to big changes.</p><p>For the RL problems with shorter a horizon we suggest to introduce two more parameters,T sample and eachw a whereT sample , the period that of eachw a is sampled out of posterior, is much smaller than T sample andw a , ∀a are used for Thompson sampling where w a , ∀a are used for backpropagation of feature representation. For game Assault, we tried usingT sample and eachw a but did not observe much a difference, and set them to T sample and each w a . But for RL setting with a shorter horizon, we suggest using them.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>A.6 DROPOUT AS A RANDOMIZED EXPLORATION STRATEGY</head><p>Dropout, as another randomized exploration method, is proposed by <ref type="bibr" target="#b24">Gal &amp; Ghahramani (2016)</ref>, but <ref type="bibr" target="#b46">Osband et al. (2016)</ref> argue about the deficiency of the estimated uncertainty and hardness in driving a suitable exploration and exploitation trade-off from it (Appendix A in <ref type="bibr" target="#b46">(Osband et al., 2016)</ref>). They argue that <ref type="bibr" target="#b24">Gal &amp; Ghahramani (2016)</ref> does not address the fundamental issue that for large networks trained to convergence all dropout samples may converge to every single datapoint. As also observed by <ref type="bibr" target="#b21">(Dhillon et al., 2018)</ref>, dropout might results in a ensemble of many models, but all almost the same (converge to the very same model behavior). We also implemented the dropout version of DDQN, Dropout-DDQN, and ran it on four randomly chosen Atari games (among those we ran for less than 50M time steps). We observed that the randomization in Dropout-DDQN is deficient and results in performances worse than DDQN on these four Atari games, Fig. <ref type="figure" target="#fig_5">5</ref>. In Table <ref type="table" target="#tab_8">4</ref> we compare the performance of BDQN, DDQN, DDQN + , and Dropout-DDQN, as well as the performance of the random policy, borrowed from <ref type="bibr" target="#b40">Mnih et al. (2015)</ref>. We observe that the Dropout-DDQN not only does not outperform the plain ε-greedy DDQN, it also sometimes underperforms the random policy. For the game Pong, we also ran Dropout-DDQN for 50M time steps but its average performance did not get any better than -17. For the experimental study we used the default dropout rate of 0.5 to mitigate its collapsing issue. After removing the maximum episode length limit for the game Atlantis, BDQN gets the score of 62M. This episode is long enough to fill half of the replay buffer and make the model perfect for the later part of the game but losing the crafted skill for the beginning of the game. We observe in Fig. <ref type="figure">6</ref> that after losing the game in a long episode, the agent forgets a bit of its skill and loses few games but wraps up immediately and gets to score of 30M . To overcome this issue, one can expand the replay buffer size, stochastically store samples in the reply buffer where the later samples get stored with lowest chance, or train new models for the later parts of the episode. There are many possible cures for this interesting observation and while we are comparing against DDQN, we do not want to advance BDQN structure-wise.</p><p>Figure <ref type="figure">6</ref>: BDQN on Atlantis after removing the limit on max of episode length hits the score of 62M in 16M samples. In Table <ref type="table" target="#tab_3">2</ref>, we provide the scores of bootstrap DQN <ref type="bibr" target="#b46">(Osband et al., 2016)</ref> and NoisyNet <ref type="bibr">5 Fortunato et al. (2017)</ref> along with BDQN. These score are directly copied from their original papers and we did not make any change to them. We also desired to report the scores of count-based method <ref type="bibr" target="#b48">(Ostrovski et al., 2017)</ref>, but unfortunately there is no table of score in that paper in order to provide them here.</p><p>In order to make it easier for the readers to compare against the results in <ref type="bibr" target="#b48">Ostrovski et al. (2017)</ref>, we visually approximated their plotted curves for CT S, P ixel, and Reactor, and added them to the Table <ref type="table" target="#tab_3">2</ref>. We added these numbers just for the convenience of the readers. Surely we do not argue any scientific meaning for them and leave it to the readers to interpret them. In BDQN, as mentioned in Eq. 3, the prior and likelihood are conjugate of each others. Therefore, we have a closed form posterior distribution of the discounted return, N t=0 γ t r t |x 0 = x, a 0 = a, D a , approximated as</p><formula xml:id="formula_11">N 1 σ 2 φ θ (x) Ξ a Φ θ a y a , φ θ (x) Ξ a φ θ (x)</formula><p>One can use this distribution and come up with a safe RL criterion for the agent <ref type="bibr" target="#b25">(Garcıa &amp; Fernández, 2015)</ref>. Consider the following example; for two actions with the same mean, if the estimated variance over the return increases, then the action becomes more unsafe Fig. <ref type="figure">8</ref>. By just looking at the low and high probability events of returns under different actions we can approximate whether an action is safe to take.</p><p>unsafe deviation mean mean deviation safer Figure <ref type="figure">8</ref>: Two actions, with the same mean, but the one with higher variance on the return might be less safe than the one with narrower variance on the return.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B BAYESIAN AND FREQUENTIST REGRET, PROOF OF THEOREMS 1,2</head><p>Modeling: We consider the following linear model over the Q functions and returns for episodic MDPs with episode length of H. We consider the discount factor to be any number 0 ≤ γ ≤ 1. Let ω * denotes the parameter corresponding the underlying model. For a given policy π and the time step h t in the episode, condition on X h0 , A h0 we have</p><formula xml:id="formula_12">H h=h0 R h = φ(X h0 , A h0 ) ω * + H h=h0 ν h with φ(X, A) ∈ R d .</formula><p>The noise process is correlated, dependent on the agent policy, and is not mean zero unless under policy π * . ΨR = Φ(X {1:H} , A {1:H} )ω * + Ψν(X {1:H} , A {1:H} ) , where , Ψ :=</p><formula xml:id="formula_13">        1 γ γ 2 . . . γ H−1 0 1 γ . . . γ H−2 0 0 1 . . . . . . . . . . . . . . . . . . . . . 0 . . . . . . . . . 1         (5)</formula><p>The vector R ∈ R H is a random vector, as stack of rewards in a episode, i.e., R h = r h . The matrix Φ(X {1:H} , X {1:H} ) ∈ R H×d is a row-wised concatenation of sequence of state-action features, Φ h = φ(X h , A h ) with Φ h denotes the h'th row.</p><p>In order to provide more intuition on the model, we can exploit the property of the matrix Ψ where</p><formula xml:id="formula_14">Ψ −1 =        1 -γ 0 . . . 0 0 1 -γ . . . 0 0 0 1 . . . . . . . . . . . . . . . . . . . . . 0 . . . . . . . . . 1       </formula><p>and rewrite Eq. 5 as follows:</p><formula xml:id="formula_15">R t = Ψ −1 Φ t ω + ν t (6)</formula><p>We denote Ψ := Ψ −1 . We build our analysis based on the former notation. We consider the feature representing matrix and weights for any X {1:H} , A {1:H} to satisfy;</p><p>trace Φ(X {1:H} , A {1:H} )Φ(X {1:H} , A {1:H} ) ≤ L , ω 2 ≤ L ω</p><p>The vector ν(X {1:H} , A {1:H} ) ∈ R H is a state-action and policy dependent noise vector. The MDP assumption is crucial for the analysis in this paper. The noise ν h encodes the randomness in transition to state X h , possible stochasticity in policy i.e., A h , reward R h . For any h, the noises after time step h, {ν h , ν h+1 , . . . , ν H }, are conditionally independent from the noises before time step h , {ν 1 , ν 2 , . . . , ν h−1 } given (X h , A h ). Moreover, since ν h encodes the stochasticity in transition and reward at time step h, conditional distribution of ν h |(X h , A h ) is mean zero and independent {ν 0 , . . . {ν h−1 , ν h+1 , . . . , ν H } other of since φ(X h , A h ) ω * represent the true Q value of X h , A h .</p><p>The agent policy at each episode is denoted as π t . In the remaining, we show how to estimate ω * through data collected by following π t . We denoteω t , the estimation of ω * . We show over time the estimation concentrates around ω * under the desire matrix norm. We further show, we can deploy this analysis an construct two algorithms, one based on PSRL, and another Optimism OFUto We restate the Eq. 5 in its abstract way; R t := ΨR t = Φ t ω + ν t , where ν t := Ψν t (7)</p><p>We consider the discount factor to be any number 0 ≤ γ ≤ 1 for the modeling and for the sake of analysis we consider γ = 1 from now on which we later argue the bounds also hold for any 0 ≤ γ ≤ 1. Assumption 1 (Sub-Gaussian random vector <ref type="bibr" target="#b28">(Hsu et al., 2012)</ref>). The noise model at time t, conditioned on the filtration F t−1 at time t is sub-Gaussian random vector, i.e. there exists a parameter</p><formula xml:id="formula_16">σ ≥ 0 such that ∀α ∈ R d E exp α ν t F t−1 ≤ exp α 2 σ 2 /2</formula><p>The filtration at time t also includes X {1:H} , A {1:H} . Asm. 1 also implies that E ν t F t = 0 which means that after drawing the matrix Φ t , the random variable ν t is means zero. A similar assumption on the noise model is assumed in prior analyses of linear bandit .</p><p>Furthermore, we consider the maximum expected cumulative reward condition on states of a episode is at most 1.</p><p>Defined the following quantities for self-normalized processes;</p><formula xml:id="formula_17">S t := t i Φ i ν i , χ t := t i=0 Φ i Φ i , χ t = χ t + χ</formula><p>where χ is a ridge regularization matrix and usually is equal to λI.</p><p>Lemma 1 (Confidence ellipsoid for problem in Eq. 5). For a matrix problem in Eq. 5, given a sequence of {Φ i , R i } T i=1 , under the Asm. 1 and the following estimator for ω t ω t :=</p><formula xml:id="formula_18">t i Φ i Φ i + λI −1 t i Φ i R i with probability at least 1 − δ ω τ − ω * χ t ≤ θ t (δ) : σ 2 log (1/δ) + d log (1 + tL 2 /λ) + λ 1/2 L ω</formula><p>for all t ≤ T where ω * 2 ≤ L ω and trace Φ(•)Φ(•) ≤ L, and therefore the confidence set is</p><formula xml:id="formula_19">C t (δ) := {ω ∈ R d : ω t − ω χ t ≤ θ t (δ)}</formula><p>Let Θ T denote the event that the confidence bounds in Lemma 1 holds.</p><p>Lemma 2 (Determinant Lemma). For a sequence</p><formula xml:id="formula_20">T t log 1 + Φ t χ −1 t we have T t log 1 + Φ t χ −1 t ≤ d log(λ + T L 2 /d)<label>(8)</label></formula><p>Regret Definition We defined V ω π , the value of policy π applied on model specified by ω in Eq. 5. We restate the definition of the regret and Bayesian regret.</p><formula xml:id="formula_21">Reg T : = E T t V ω * π * − V ω * πt |ω *</formula><p>Where π t is the agent policy at time t When there is a prior over the ω * the expected Bayesian regret might be the target of the study. Given samples by following the agent policy π t for each episode t ≤ t we estimate the ω t as follows;</p><formula xml:id="formula_22">ω t := t i Φ i Φ i + λI −1 t i Φ i R i</formula><p>Lemma 1 states that under event Θ T , ω t − ω * χ t ≤ θ t (δ). For an observed state X 1 t , the optimistic policy is π t (X h t ) = arg max a∈A max ω∈Ct−1(δ) φ (X h t , a)ω Furthermore, we define state and policy dependent optimistic parameter ω t (π) as follows;</p><p>ω t (π) := arg max ω∈Ct−1(δ) φ(X 1 t , π(X 1 t )) ω</p><p>For ease of notation we drop the state in the notation. Following OFU, Alg. 3, we set π t = π t denote the optimistic policy. By the definition we have</p><formula xml:id="formula_23">V ωt( πt) πt (X h t ) ≥ V ωt(π * ) π * (X h t )</formula><p>Therefore, under the event Θ T we have</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.2 BAYESIAN REGRET OF ALG. 2</head><p>The analysis developed in the previous section, up to some minor modification, e.g., change of strategy to PSRL, directly applies to Bayesian regret bound, with a farther expectation over models.</p><p>When there is a prior over the ω * the expected Bayesian regret might be the target of the study.</p><formula xml:id="formula_24">BayesReg T : = E T t V ω * π * − V ω * πt E T t V ω * π * − V ω * πt H t</formula><p>Here H t is a multivariate random sequence which indicates history at the beginning of episode t and π t is the policy following PSRL. For the remaining π t denotes the PSRL policy. As it mentioned in the Alg. 2, at the beginning of an episode, we draw ω t for the posterior and the corresponding policy is π t (X h t ) := arg max a∈A φ(X h t , a) ω t Condition on the history H t , samples by following the agent policy π t for each episode t ≤ t, similar to previous section we estimate the ω t as follows;</p><formula xml:id="formula_25">ω t := t i Φ i Φ i + λI −1 t i Φ i R i</formula><p>Lemma 1 states that under event Θ T , ω t − ω * χ t ≤ θ t (δ). Conditioned on H t , the ω t and ω * are equally distributed, then we have</p><formula xml:id="formula_26">E V ωt(π * ) π * H t = E V ωt(πt) πt H t</formula><p>Therefore, under event Θ T holds for all ω * we have</p><formula xml:id="formula_27">BayesReg T : = T t E     V ω * π * (X 1 t ) − V ω * πt (X 1 t ) ∆ h=1 t |H t     = T t E V ωt(πt) πt (X 1 t ) − V ωt(π * ) π * (X 1 t ) + V ω * π * (X 1 t ) − V ω * πt (X 1 t )|H t = T t E   V ωt(πt) πt (X 1 t ) − V ω * πt (X 1 t ) + V ω * π * (X 1 t ) − V ωt(π * ) π * (X 1 t ) ≤ 0 |H t   </formula><p>Resulting in</p><formula xml:id="formula_28">BayesReg T ≤ T t E V ωt(πt) πt (X 1 t ) − V ω * πt (X 1 t )|H t</formula><p>Lemma 4. [Extension to Self-normalized bound in ] For a stopping time τ and filtration {F t } ∞ t=0 , with probability at least 1 − δ S τ 2 χ −1 τ ≤ 2σ 2 log( det (χ t ) 1/2 det( χ) −1/2 δ )</p><p>Proof. of Lemma 4. Given the definition of the parameters of self-normalized process, we can rewrite M α t as follows;</p><formula xml:id="formula_29">M α t = exp α S t σ − 1 2 α χt</formula><p>Consider Ω as a Gaussian random vector and f (Ω = α) denotes the density with covariance matrix of χ −1 . Define M t := E M Ω t |F ∞ . Therefore we have E</p><formula xml:id="formula_30">[M t ] = E E M Ω t |Ω ≤ 1. Therefore M t = R d exp α S t σ − 1 2 α χt f (α)dα = R d exp 1 2 α − χ −1 t S t /σ 2 χt + 1 2 S t /σ 2 χ −1 t f (α)dα = det ( χ) (2π) d exp 1 2 S t /σ χ −1 t R d exp 1 2 α − χ −1 t S t /σ 2 χt + 1 2 α 2 χ dα</formula><p>Since χ t and χ are positive semi definite and positive definite respectively, we have</p><formula xml:id="formula_31">α − χ −1 t S t /σ 2 χt + α 2 χ = α − χ + χ −1 t S t /σ 2 χ+χt + χ −1 t S t /σ 2 χt − S t /σ 2 ( χ+χt) −1 = α − χ + χ −1 t S t /σ 2 χ+χt + S t /σ 2 χ −1 t − S t /σ 2 ( χ+χt) −1</formula><p>Therefore, Since E [M τ ] ≤ 1 we have</p><formula xml:id="formula_32">M t = det ( χ)<label>(2π)</label></formula><formula xml:id="formula_33">P S τ 2 ( χ+χτ ) −1 ≤ 2σ log det ( χ + χ τ ) 1/2 δ det ( χ) 1/2 ≤ E exp 1 2 S τ /σ 2 ( χ+χτ ) −1 det( χ+χτ ) δ det( χ) 1/2 ≤ δ</formula><p>Where the Markov inequality is deployed for the final step. The stopping is considered to be the time step as the first time in the sequence when the concentration in the Lemma 4 does not hold.</p><p>Proof of Lemma 1. Given the estimator ω t we have the following:</p><formula xml:id="formula_34">ω t = t i Φ i Φ i + λI −1 t i Φ i (Φ i ω * + ν i ) = t i Φ i Φ i + λI −1 t i Φ i ν i + t i Φ i Φ i + λI −1 t i Φ i Φ i + λI ω * − λ t i Φ i Φ i + λI −1 ω *</formula></div><figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_0"><head>,</head><label></label><figDesc>θ, θ target , w a , w target a Cov a ∀a, and B 2: for episode = 1,2,3. . . do3: for t = 1 to the end of episode do 4: Draw sample w a ∼ N (w target a , Cov a ) ∀a every T sample 5: Set θ target ← θ every T target 6: Update w target a and Cov a , ∀a using B experiences every T Bayes target 7:Execute a t = arg max a w a φ θ (x t ), observe reward r t , successor State x t+1 8:</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_1"><head>Figure 2 :</head><label>2</label><figDesc>Figure 2: BDQN deploys Thompson Sampling to, sample w a ∀a ∈ A around the empirical mean w a with w * a the underlying parameter of interest.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_2"><head></head><label></label><figDesc>and trace Φ(•)Φ(•) ≤ L, a.s. • Maximum expected cumulative reward of an episode condition on the states of that episode is in [0, 1].</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_3"><head>Figure 3 :</head><label>3</label><figDesc>Figure 3: The comparison between DDQN and BDQN</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_4"><head>Figure 4 :</head><label>4</label><figDesc>Figure 4: Effect of learning rate on DDQN</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_5"><head>Figure 5 :</head><label>5</label><figDesc>Figure 5: The comparison between DDQN, BDQN and Dropout-DDQN</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_6"><head>Figure 7 :</head><label>7</label><figDesc>Figure 7: A couple of more runs of BDQN where the jump around 15M constantly happens A.8 FURTHER DISCUSSION ON REPRODUCIBILITY</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_7"><head></head><label></label><figDesc>guaranteed Bayesian and frequentist regret upper bounds respectively. The main body of the following analyses on concentration of measure is a matrix extension of contextual linear bandit analyses Abbasi-Yadkori et al. (2011); Chu et al. (2011); Li et al. (2010); Rusmevichientong &amp; Tsitsiklis (2010); Dani et al. (2008); Russo &amp; Van Roy (2014a) and self normalized processes (de la Pena et al., 2004). Our regret analysis extends prior analysis in frequentist and Bayesian regret literature Osband et al. (2013); Jaksch et al. (2010).</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_8"><head></head><label></label><figDesc>π * − V ω * πt B.1 OPTIMISM: REGRET BOUND OFALG. 3    </figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_0"><head>Table 1 :</head><label>1</label><figDesc>Characteristics of Thompson Sampling, ε-greedy, and Boltzmann exploration what information they use for exploration</figDesc><table><row><cell>Strategy</cell><cell>Greedy-Action Estimated Q-values Estimated uncertainties</cell></row><row><cell>ε-greedy</cell><cell></cell></row><row><cell>Boltzmann exploration</cell><cell></cell></row><row><cell>Thompson Sampling</cell><cell></cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_3"><head>Table 2 :</head><label>2</label><figDesc>Comparison of scores and sample complexities (scores in the first two columns are average of 100 consecutive episodes). The scores of DDQN + are the reported scores of DDQN in Van Hasselt et al. (2016) after running it for 200M interactions at evaluation time where the ε = 0.001. Bootstrap DQN</figDesc><table /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_4"><head></head><label></label><figDesc>Game BDQN DDQN DDQN + Bootstrap NoisyNet CTS Pixel Reactor Human SC SC + Step</figDesc><table><row><cell>Amidar</cell><cell cols="2">5.52k 0.99k</cell><cell>0.7k</cell><cell>1.27k</cell><cell>1.5k</cell><cell cols="5">1.03k 0.62k 1.18k 1.7k 22.9M 4.4M 100M</cell></row><row><cell>Alien</cell><cell>3k</cell><cell>2.9k</cell><cell>2.9k</cell><cell>2.44k</cell><cell>2.9k</cell><cell cols="3">1.9k 1.7k 3.5k 6.9k</cell><cell cols="2">-36.27M 100M</cell></row><row><cell>Assault</cell><cell cols="3">8.84k 2.23k 5.02k</cell><cell>8.05k</cell><cell>3.1k</cell><cell cols="5">2.88k 1.25k 3.5k 1.5k 1.6M 24.3M 100M</cell></row><row><cell>Asteroids</cell><cell cols="3">14.1k 0.56k 0.93k</cell><cell>1.03k</cell><cell>2.1k</cell><cell cols="5">3.95k 0.9k 1.75k 13.1k 58.2M 9.7M 100M</cell></row><row><cell>Asterix</cell><cell cols="2">58.4k 11k</cell><cell>15.15k</cell><cell>19.7k</cell><cell>11.0</cell><cell cols="5">9.55k 1.4k 6.2k 8.5k 3.6M 5.7M 100M</cell></row><row><cell>BeamRider</cell><cell>8.7k</cell><cell>4.2k</cell><cell>7.6k</cell><cell>23.4k</cell><cell>14.7k</cell><cell>7.0k 3k</cell><cell cols="4">3.8k 5.8k 4.0M 8.1M 70M</cell></row><row><cell>BattleZone</cell><cell cols="3">65.2k 23.2k 24.7k</cell><cell>36.7k</cell><cell cols="3">11.9k 7.97k 10k 45k</cell><cell cols="3">38k 25.1M 14.9M 50M</cell></row><row><cell>Atlantis</cell><cell cols="3">3.24M 39.7k 64.76k</cell><cell>99.4k</cell><cell>7.9k</cell><cell cols="5">1.8M 40k 9.5M 29k 3.3M 5.1M 40M</cell></row><row><cell cols="3">DemonAttack 11.1k 3.8k</cell><cell>9.7k</cell><cell>82.6k</cell><cell cols="2">26.7k 39.3k 1.3k</cell><cell>7k</cell><cell cols="3">3.4k 2.0M 19.9M 40M</cell></row><row><cell>Centipede</cell><cell>7.3k</cell><cell>6.4k</cell><cell>4.1k</cell><cell>4.55k</cell><cell>3.35k</cell><cell cols="2">5.4k 1.8k 3.5k</cell><cell>12k</cell><cell>-</cell><cell>4.2M 40M</cell></row><row><cell>BankHeist</cell><cell cols="3">0.72k 0.34k 0.72k</cell><cell>1.21k</cell><cell>0.64k</cell><cell cols="5">1.3k 0.42k 1.1k 0.72k 2.1M 10.1M 40M</cell></row><row><cell cols="2">CrazyClimber 124k</cell><cell>84k</cell><cell>102k</cell><cell>138k</cell><cell cols="6">121k 112.9k 75k 119k 35.4k 0.12M 2.1M 40M</cell></row><row><cell>ChopCmd 3</cell><cell cols="2">72.5k 0.5k</cell><cell>4.6k</cell><cell>4.1k</cell><cell>5.3k</cell><cell cols="5">5.1k 2.5k 4.8k 9.9k 4.4M 2.2M 40M</cell></row><row><cell>Enduro</cell><cell cols="3">1.12k 0.38k 0.32k</cell><cell>1.59k</cell><cell cols="6">0.91k 0.69k 0.19k 2.49k 0.31k 0.82M 0.8M 30M</cell></row><row><cell>Pong</cell><cell>21</cell><cell>18.82</cell><cell>21</cell><cell>20.9</cell><cell>21</cell><cell>20.8 17</cell><cell>20</cell><cell cols="3">9.3 1.2M 2.4M 5M</cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_6"><head></head><label></label><figDesc>Nikolaos Tziortziotis, Christos Dimitrakakis, and Konstantinos Blekas. Linear bayesian reinforcement learning. In IJCAI 2013, Proceedings of the 23rd International Joint Conference on Artificial Intelligence, 2013.</figDesc><table><row><cell>Hado Van Hasselt, Arthur Guez, and David Silver. Deep reinforcement learning with double q-</cell></row><row><cell>learning. In AAAI, 2016.</cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_7"><head>Table 3 :</head><label>3</label><figDesc>1st column: score ratio of BDQN to DDQN run for same number of time steps. 2nd column: score ratio of BDQN to DDQN + . 3rd column: score ratio of BDQN to human scores reported at<ref type="bibr" target="#b40">Mnih et al. (2015)</ref>. 4th column: Area under the performance plot ration (AuPPr) of BDQN to DDQN. AuPPr is the integral of area under the performance plot ration. For Pong, since the scores start form −21, we shift it up by 21. 5th column: Sample complexity, SC: the number of samples the BDQN requires to beat the human score<ref type="bibr" target="#b40">(Mnih et al., 2015)</ref>(" − " means BDQN could not beat human score). 6th column: SC + : the number of samples the BDQN requires to beat the score of DDQN + . We run both BDQN and DDQN for the same number of times steps, stated in the last column.</figDesc><table><row><cell>Game</cell><cell>BDQN DDQN</cell><cell>BDQN DDQN +</cell><cell>BDQN HUMAN</cell><cell cols="3">AuPPr SC SC + Steps</cell></row><row><cell>Amidar</cell><cell>558%</cell><cell>788%</cell><cell cols="4">325% 280% 22.9M 4.4M 100M</cell></row><row><cell>Alien</cell><cell>103%</cell><cell>103%</cell><cell cols="2">43% 110%</cell><cell cols="2">-36.27M 100M</cell></row><row><cell>Assault</cell><cell>396%</cell><cell>176%</cell><cell cols="4">589% 290% 1.6M 24.3M 100M</cell></row><row><cell>Asteroids</cell><cell cols="6">2517% 1516% 108% 680% 58.2M 9.7M 100M</cell></row><row><cell>Asterix</cell><cell>531%</cell><cell>385%</cell><cell cols="4">687% 590% 3.6M 5.7M 100M</cell></row><row><cell>BeamRider</cell><cell>207%</cell><cell>114%</cell><cell cols="4">150% 210% 4.0M 8.1M 70M</cell></row><row><cell>BattleZone</cell><cell>281%</cell><cell>253%</cell><cell cols="4">172% 180% 25.1M 14.9M 50M</cell></row><row><cell>Atlantis</cell><cell cols="6">80604% 49413% 11172% 380% 3.3M 5.1M 40M</cell></row><row><cell>DemonAttack</cell><cell>292%</cell><cell>114%</cell><cell cols="4">326% 310% 2.0M 19.9M 40M</cell></row><row><cell>Centipede</cell><cell>114%</cell><cell>178%</cell><cell cols="2">61% 105%</cell><cell>-</cell><cell>4.2M 40M</cell></row><row><cell>BankHeist</cell><cell>211%</cell><cell>100%</cell><cell cols="4">100% 250% 2.1M 10.1M 40M</cell></row><row><cell>CrazyClimber</cell><cell>148%</cell><cell>122%</cell><cell cols="4">350% 150% 0.12M 2.1M 40M</cell></row><row><cell cols="7">ChopperCommand 14500% 1576% 732% 270% 4.4M 2.2M 40M</cell></row><row><cell>Enduro</cell><cell>295%</cell><cell>350%</cell><cell cols="4">361% 300% 0.82M 0.8M 30M</cell></row><row><cell>Pong</cell><cell>112%</cell><cell>100%</cell><cell cols="4">226% 130% 1.2M 2.4M 5M</cell></row><row><cell cols="2">A.1 NETWORK ARCHITECTURE:</cell><cell></cell><cell></cell><cell></cell><cell></cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_8"><head>Table 4 :</head><label>4</label><figDesc>The comparison of BDQN, DDQN, Dropout-DDQN and random policy. Dropout-DDQN as another randomization strategy provides a deficient estimation of uncertainty and results in poor exploration/exploitation trade-off.</figDesc><table><row><cell>Game</cell><cell cols="6">BDQN DDQN DDQN + Dropout-DDQN Random Policy Step</cell></row><row><cell cols="2">CrazyClimber 124k</cell><cell>84k</cell><cell>102k</cell><cell>19k</cell><cell>11k</cell><cell>40M</cell></row><row><cell>Atlantis</cell><cell cols="3">3.24M 39.7k 64.76k</cell><cell>7.7k</cell><cell>12.85k</cell><cell>40M</cell></row><row><cell>Enduro</cell><cell cols="3">1.12k 0.38k 0.32k</cell><cell>0.27k</cell><cell>0</cell><cell>30M</cell></row><row><cell>Pong</cell><cell>21</cell><cell>18.82</cell><cell>21</cell><cell>-18</cell><cell>-20.7</cell><cell>5M</cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_9"><head>Table 2</head><label>2</label><figDesc>shows a significant improvement of BDQN over these baselines. Despite the simplicity and negligible computation overhead of BDQN over DDQN, we can not scientifically claim that BDQN outperforms these baselines by just looking at the scores in Table2 because we are not aware of their detailed implementation as well as environment details. For example, in this work, we directly implemented DDQN by following the implementation details mentioned in the original DDQN paper and the scores of our DDQN implementation during the evaluation time almost matches the scores of DDQN reported in the original paper. But the reported scores of implemented DDQN in<ref type="bibr" target="#b46">Osband et al. (2016)</ref> are much different from the reported score in the original DDQN paper.</figDesc><table><row><cell>A.9 A SHORT DISCUSSION ON SAFETY</cell></row></table></figure>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="1">BDQN approximates the posterior resulting in approximating Thompson sample. In the remaining, we state Thompson Sampling and its approximation as Thomson samples unless we specify.</note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="2">Each input frame is a pixel-max of the two consecutive frames. We detailed the environment setting in the implementation code</note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="4">To further reproducibility, we released our codes and trained models. Since DRL experiments are expensive, we also have released the recorded arrays of returns. We also implemented bootstrapped DQN<ref type="bibr" target="#b46">(Osband et al., 2016)</ref> and released the code but we were not able to reproduce their results beyond the performance of random policy</note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="5">This work does not have scores of Noisy-net with DDQN objective function but it has Noisy-net with DQN objective which are the scores reported in Table 2</note>
+		</body>
+		<back>
+			<div type="annex">
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>Resulting in</p><p>Lets defined V ω π (X 1 t , . . . , X h t ; h : π ) as the value function following policy π for h time step then switching to policy π on the model ω and observing X 1 t , . . . X h t .</p><p>Given the generative model in Eq.5 we have</p><p>we deploy the similar decomposition and upper bound as</p><p>Since for both of V ω * πt (X 1 t ; 1 : π * ) and V ω * πt (X 1 t ) we follow the same policy on the same model for 1 time step, the reward at the first time step has the same distribution, therefore we have;</p><p>Similarly we can defined ∆ h=3 t , . . . ∆ h=H t . Therefore;</p><p>Since the maximum expected cumulative reward, condition on states of a episode is at most 1, we have;</p><p>Moreover, at time T , we can use Jensen's inequality, exploit the fact that θ t (δ) is an increasing function of t and have</p><p>Now, using the fact that for any scalar α such that 0 ≤ α ≤ 1, then α ≤ 2 log(1 + α) we can rewrite the latter part of Eq. 10</p><p>By applying the Lemma 2 and substituting the RHS of Eq. 8 into Eq. 10, we get</p><p>with probability at least 1 − δ. If we set δ = 1/T then the probability that the event Θ T holds is 1 − 1/T and we get regret of at most the RHS of Eq. 11, otherwise with probability at most 1/T we get maximum regret of T , therefore</p><p>and theorem statement follows.</p><p>Similar to optimism and defining V ω π (X 1 t , . . . , X h t ; h : π ) accomponeid with Eq.5 we have;</p><p>we deploy the similar decomposition and upper bound as</p><p>we follow the same distribution over policies and models for 1 time step, the reward at the first time step has the same distribution, therefore we have;</p><p>The condition on H t was required to come up with the mentioned decomposition through ∆ h t and it is not needed anymore, therefore;</p><p>Again similar to optimism we have the maximum expected cumulative reward condition on states of a episode is at most 1, we have;</p><p>Moreover, at time T , we can use Jensen's inequality, exploit the fact that θ t (δ) is an increasing function of t and have</p><p>Under event Θ T which holds with probability at least 1 − δ. If we set δ = 1/T then the probability that the event Θ holds is 1 − 1/T and we get regret of at most the RHS of Eq. 17, otherwise with probability at most 1/T we get maximum regret of T , therefore</p><p>and theorem statement follows.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.3 DISCOUNT FACTOR</head><p>Through the analysis of the theorems 1 and 2 we studied the regret upper bounds for undiscounted reward MDPs when γ = 1. If we consider the problem expression as follows R t := ΨR t ν t := Ψν t the parameter ν t for a general matrix Ψ represent the stochasticity of the return under any discount factor 0 ≤ γ ≤ 1. Under the general discount factor, the Assumption 1 describes the sub-Gaussian characteristics of ν t . Moreover under discounted return, the value function represent the expectation of the discounted return, resulting in a potentially smaller L ω . Furthermore, in the decompositions derived in the Eqs. 9 and 12 regarding ∆ h t we require to aggregate the regret while discounting the per step regrets. It means we replace 1 with [1, γ, γ 2 , . . . , γ H−1 ] in those equations. Consequently, instead of considering the 1 2 to upper bound the regrets, we are interested in the discounted returns and consider [1, γ, γ 2 , . . . , γ H−1 ] 2 to come up with the corresponding upper bounds and replace √ H in the final statements of the theorems 1 and 2 with a discount factor dependent and smaller value [1, γ, γ 2 , . . . , γ H−1 ] 2 .</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.4 PROOF OF LEMMAS</head><p>Lemma 3. Let α ∈ R d be be an arbitrary vector and for any t ≥ 0 define</p><p>Then, for a stopping time under the filtration</p><p>Proof. Lemma 3 We first show that {M α t } ∞ t=0 is a supermartingale sequence. Let</p><p>The last inequality follows since E [D α t |F t−1 ] ≤ 1 due to Assumption 1, therefore since for the first </p><p>As a results, applying Cauchy-Schwarz inequality and inequalities ω *</p><p>where applying self normalized Lemma 4, with probability at least 1 − δ</p><p>hold for any ζ. By plugging in ζ = χ t ( ω t − ω * ) we get the following;</p><p>The det(χ t ) can be written as det(χ t ) = </p><p>therefore the main statement of Lemma 1 goes through.</p><p>Proof. Lemma 2 We have the following for the determinant of det (χ T )</p><p>From linear algebra, and given a time step t, we define the characteristic polynomial of the matrix Φ t χ −1 t Φ t as; CP t (λ) = det(λI H − Φ t χ −1 t Φ t ). If the set {λ 1 , λ 2 , . . . , λ d } represent the eigenvalues of Φ t χ −1 t Φ t where λ i ≥ λ j if i ≥ j, one can rewrite CP t (λ) as follows;</p><p>Now by adding the matrix I H to Φ t χ −1 t Φ t , we get CP t (λ) = det(λI H − I H − Φ t χ −1 t Φ t ), therefore; </p><p>and the statement follows.</p></div>			</div>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">Regret bounds for the adaptive control of linear quadratic systems</title>
+		<author>
+			<persName><forename type="first">Yasin</forename><surname>Abbasi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">-Yadkori</forename></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Csaba</forename><surname>Szepesvári</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">COLT 2011 -The 24th Annual Conference on Learning Theory</title>
+				<meeting><address><addrLine>Budapest, Hungary</addrLine></address></meeting>
+		<imprint>
+			<date type="published" when="2011" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<analytic>
+		<title level="a" type="main">Bayesian optimal control of smoothly parameterized systems</title>
+		<author>
+			<persName><forename type="first">Yasin</forename><surname>Abbasi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">-Yadkori</forename></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Csaba</forename><surname>Szepesvári</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">UAI</title>
+				<imprint>
+			<date type="published" when="2015" />
+			<biblScope unit="page" from="1" to="11" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<analytic>
+		<title level="a" type="main">Stochastic Linear Bandits</title>
+		<author>
+			<persName><forename type="first">Yasin</forename><surname>Abbasi-Yadkori</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dávid</forename><surname>Pál</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Csaba</forename><surname>Szepesvári</surname></persName>
+		</author>
+		<idno type="DOI">10.1017/9781108571401.025</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Bandit Algorithms</title>
+				<imprint>
+			<publisher>Cambridge University Press</publisher>
+			<date type="published" when="2020-07-31" />
+			<biblScope unit="page" from="205" to="218" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b3">
+	<monogr>
+		<author>
+			<persName><forename type="first">David</forename><surname>Abel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alekh</forename><surname>Agarwal</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Fernando</forename><surname>Diaz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Akshay</forename><surname>Krishnamurthy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Robert</forename><forename type="middle">E</forename><surname>Schapire</surname></persName>
+		</author>
+		<title level="m">Exploratory gradient boosting for reinforcement learning in complex domains. arXiv</title>
+				<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b4">
+	<analytic>
+		<title level="a" type="main">Analysis of thompson sampling for the multi-armed bandit problem</title>
+		<author>
+			<persName><forename type="first">Shipra</forename><surname>Agrawal</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Navin</forename><surname>Goyal</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">COLT</title>
+				<imprint>
+			<date type="published" when="2012" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b5">
+	<analytic>
+		<title level="a" type="main">Tensor Decompositions for Learning Latent Variable Models</title>
+		<author>
+			<persName><forename type="first">Anima</forename><surname>Anandkumar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Rong</forename><surname>Ge</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Daniel</forename><surname>Hsu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sham</forename><forename type="middle">M</forename><surname>Kakade</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matus</forename><surname>Telgarsky</surname></persName>
+		</author>
+		<idno type="DOI">10.21236/ada604494</idno>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Machine Learning Research</title>
+		<imprint>
+			<biblScope unit="volume">15</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="2773" to="2832" />
+			<date type="published" when="2012-12-08" />
+			<publisher>Defense Technical Information Center</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b6">
+	<analytic>
+		<title level="a" type="main">Learning near-optimal policies with Bellman-residual minimization based fitted policy iteration and a single sample path</title>
+		<author>
+			<persName><forename type="first">András</forename><surname>Antos</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Csaba</forename><surname>Szepesvári</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Rémi</forename><surname>Munos</surname></persName>
+		</author>
+		<idno type="DOI">10.1007/s10994-007-5038-2</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Machine Learning</title>
+		<title level="j" type="abbrev">Mach Learn</title>
+		<idno type="ISSN">0885-6125</idno>
+		<idno type="ISSNe">1573-0565</idno>
+		<imprint>
+			<biblScope unit="volume">71</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="89" to="129" />
+			<date type="published" when="2007-11-14" />
+			<publisher>Springer Science and Business Media LLC</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b7">
+	<analytic>
+		<title level="a" type="main">A bayesian sampling approach to exploration in reinforcement learning</title>
+		<author>
+			<persName><forename type="first">John</forename><surname>Asmuth</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lihong</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Michael</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ali</forename><surname>Littman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">David</forename><surname>Nouri</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Wingate</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the Twenty-Fifth Conference on Uncertainty in Artificial Intelligence</title>
+				<meeting>the Twenty-Fifth Conference on Uncertainty in Artificial Intelligence</meeting>
+		<imprint>
+			<date type="published" when="2009" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b8">
+	<analytic>
+		<title level="a" type="main">Reinforcement learning of pomdps using spectral methods</title>
+		<author>
+			<persName><forename type="first">Kamyar</forename><surname>Azizzadenesheli</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alessandro</forename><surname>Lazaric</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Animashree</forename><surname>Anandkumar</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the 29th Annual Conference on Learning Theory (COLT)</title>
+				<meeting>the 29th Annual Conference on Learning Theory (COLT)</meeting>
+		<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b9">
+	<monogr>
+		<title level="m" type="main">Reinforcement learning in rich-observation mdps using spectral methods</title>
+		<author>
+			<persName><forename type="first">Kamyar</forename><surname>Azizzadenesheli</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alessandro</forename><surname>Lazaric</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Animashree</forename><surname>Anandkumar</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1611.03907</idno>
+		<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b10">
+	<analytic>
+		<title level="a" type="main">Partial Monitoring—Classification, Regret Bounds, and Algorithms</title>
+		<author>
+			<persName><forename type="first">Gábor</forename><surname>Bartók</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dean</forename><forename type="middle">P</forename><surname>Foster</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dávid</forename><surname>Pál</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alexander</forename><surname>Rakhlin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Csaba</forename><surname>Szepesvári</surname></persName>
+		</author>
+		<idno type="DOI">10.1287/moor.2014.0663</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematics of Operations Research</title>
+		<title level="j" type="abbrev">Mathematics of OR</title>
+		<idno type="ISSN">0364-765X</idno>
+		<idno type="ISSNe">1526-5471</idno>
+		<imprint>
+			<biblScope unit="volume">39</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="967" to="997" />
+			<date type="published" when="2014-11" />
+			<publisher>Institute for Operations Research and the Management Sciences (INFORMS)</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b11">
+	<analytic>
+		<title level="a" type="main">Attentional Processing on a Spike-Based VLSI Neural Network</title>
+		<author>
+			<persName><forename type="first">Marc</forename><surname>Bellemare</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sriram</forename><surname>Srinivasan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Georg</forename><surname>Ostrovski</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tom</forename><surname>Schaul</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">David</forename><surname>Saxton</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Remi</forename><surname>Munos</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/7503.003.0189</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 19</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2007" />
+			<biblScope unit="page" from="1471" to="1479" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b12">
+	<analytic>
+		<title level="a" type="main">The arcade learning environment: An evaluation platform for general agents</title>
+		<author>
+			<persName><forename type="first">Yavar</forename><surname>Marc G Bellemare</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joel</forename><surname>Naddaf</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Michael</forename><surname>Veness</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Bowling</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">J. Artif. Intell. Res.(JAIR)</title>
+		<imprint>
+			<date type="published" when="2013" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b13">
+	<analytic>
+		<title level="a" type="main">R-max-a general polynomial time algorithm for nearoptimal reinforcement learning</title>
+		<author>
+			<persName><forename type="first">I</forename><surname>Ronen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Moshe</forename><surname>Brafman</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Tennenholtz</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Machine Learning Research</title>
+		<imprint>
+			<biblScope unit="volume">3</biblScope>
+			<biblScope unit="page" from="213" to="231" />
+			<date type="published" when="2003" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b14">
+	<monogr>
+		<title level="m" type="main">Schneider, Louis (eig. Ludwig Wilhelm; Pseud. Sir John Retcliff, Louis Both, Ludwig Both, L. W. Both)</title>
+		<author>
+			<persName><forename type="first">Greg</forename><surname>Brockman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Vicki</forename><surname>Cheung</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ludwig</forename><surname>Pettersson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jonas</forename><surname>Schneider</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">John</forename><surname>Schulman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jie</forename><surname>Tang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Wojciech</forename><surname>Zaremba</surname></persName>
+		</author>
+		<idno type="DOI">10.1553/0x0001e151</idno>
+		<imprint>
+			<date>2016</date>
+			<publisher>Osterreichische Akademie der Wissenschaften, Verlag</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b15">
+	<analytic>
+		<title level="a" type="main">KLD-Sampling</title>
+		<author>
+			<persName><forename type="first">Olivier</forename><surname>Chapelle</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lihong</forename><surname>Li</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/1120.003.0096</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 14</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2002" />
+			<biblScope unit="page" from="2249" to="2257" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b16">
+	<analytic>
+		<title level="a" type="main">Communication-Efficient Federated Learning with Adaptive Parameter Freezing</title>
+		<author>
+			<persName><forename type="first">Chen</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Hong</forename><surname>Xu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Wei</forename><surname>Wang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Baochun</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Bo</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Li</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Gong</forename><surname>Zhang</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/icdcs51616.2021.00010</idno>
+	</analytic>
+	<monogr>
+		<title level="m">2021 IEEE 41st International Conference on Distributed Computing Systems (ICDCS)</title>
+				<imprint>
+			<publisher>IEEE</publisher>
+			<date type="published" when="2021-07" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv</note>
+</biblStruct>
+
+<biblStruct xml:id="b17">
+	<analytic>
+		<title level="a" type="main">Contextual bandits with linear payoff functions</title>
+		<author>
+			<persName><forename type="first">Wei</forename><surname>Chu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lihong</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lev</forename><surname>Reyzin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Robert</forename><surname>Schapire</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the Fourteenth International Conference on Artificial Intelligence and Statistics</title>
+				<meeting>the Fourteenth International Conference on Artificial Intelligence and Statistics</meeting>
+		<imprint>
+			<date type="published" when="2011" />
+			<biblScope unit="page" from="208" to="214" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b18">
+	<monogr>
+		<title level="m" type="main">Stochastic linear optimization under bandit feedback</title>
+		<author>
+			<persName><forename type="first">Varsha</forename><surname>Dani</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Thomas</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Hayes</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Sham</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Kakade</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2008" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b19">
+	<monogr>
+		<title level="m" type="main">Self-normalized processes: exponential inequalities, moment bounds and iterated logarithm laws. Annals of probability</title>
+		<author>
+			<persName><forename type="first">H De La</forename><surname>Victor</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Pena</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Michael</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tze Leung</forename><surname>Klass</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Lai</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2004" />
+			<biblScope unit="page" from="1902" to="1933" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b20">
+	<analytic>
+		<title level="a" type="main">Bayesian q-learning</title>
+		<author>
+			<persName><forename type="first">Richard</forename><surname>Dearden</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Nir</forename><surname>Friedman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Stuart</forename><surname>Russell</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">AAAI/IAAI</title>
+				<imprint>
+			<date type="published" when="1998" />
+			<biblScope unit="page" from="761" to="768" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b21">
+	<monogr>
+		<author>
+			<persName><forename type="first">Kamyar</forename><surname>Guneet S Dhillon</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Azizzadenesheli</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Zachary</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jeremy</forename><surname>Lipton</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jean</forename><surname>Bernstein</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Aran</forename><surname>Kossaifi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Anima</forename><surname>Khanna</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Anandkumar</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1803.01442</idno>
+		<title level="m">Stochastic activation pruning for robust adversarial defense</title>
+				<imprint>
+			<date type="published" when="2018" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b22">
+	<analytic>
+		<title level="a" type="main">Reinforcement learning with Gaussian processes</title>
+		<author>
+			<persName><forename type="first">Yaakov</forename><surname>Engel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shie</forename><surname>Mannor</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ron</forename><surname>Meir</surname></persName>
+		</author>
+		<idno type="DOI">10.1145/1102351.1102377</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the 22nd international conference on Machine learning - ICML &apos;05</title>
+				<meeting>the 22nd international conference on Machine learning - ICML &apos;05</meeting>
+		<imprint>
+			<publisher>ACM Press</publisher>
+			<date type="published" when="2005" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b23">
+	<monogr>
+		<title/>
+		<author>
+			<persName><forename type="first">Meire</forename><surname>Fortunato</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mohammad</forename><forename type="middle">Gheshlaghi</forename><surname>Azar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Bilal</forename><surname>Piot</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jacob</forename><surname>Menick</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Osband</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alex</forename><surname>Graves</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Vlad</forename><surname>Mnih</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Remi</forename><surname>Munos</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Demis</forename><surname>Hassabis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Olivier</forename><surname>Pietquin</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b24">
+	<analytic>
+		<title level="a" type="main">Dropout as a bayesian approximation: Representing model uncertainty in deep learning</title>
+		<author>
+			<persName><forename type="first">Yarin</forename><surname>Gal</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Zoubin</forename><surname>Ghahramani</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">ICML</title>
+				<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b25">
+	<analytic>
+		<title level="a" type="main">Run Time Assured Reinforcement Learning for Safe Satellite Docking</title>
+		<author>
+			<persName><forename type="first">Javier</forename><surname>Garcıa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Fernando</forename><surname>Fernández</surname></persName>
+		</author>
+		<idno type="DOI">10.2514/6.2022-1853.vid</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Machine Learning Research</title>
+		<imprint>
+			<biblScope unit="volume">16</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="1437" to="1480" />
+			<date type="published" when="2022-01-03" />
+			<publisher>American Institute of Aeronautics and Astronautics (AIAA)</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b26">
+	<analytic>
+		<title level="a" type="main">Convex Optimization: Algorithms and Complexity</title>
+		<author>
+			<persName><forename type="first">Mohammed</forename><surname>Ghavamzadeh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shie</forename><surname>Mannor</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joelle</forename><surname>Pineau</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Aviv</forename><surname>Tamar</surname></persName>
+		</author>
+		<idno type="DOI">10.1561/2200000049</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Foundations and Trends® in Machine Learning</title>
+		<title level="j" type="abbrev">FNT in Machine Learning</title>
+		<idno type="ISSN">1935-8237</idno>
+		<idno type="ISSNe">1935-8245</idno>
+		<imprint>
+			<biblScope unit="volume">8</biblScope>
+			<biblScope unit="issue">5-6</biblScope>
+			<biblScope unit="page" from="359" to="483" />
+			<date type="published" when="2015" />
+			<publisher>Now Publishers</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b27">
+	<monogr>
+		<author>
+			<persName><forename type="first">Peter</forename><surname>Henderson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Riashat</forename><surname>Islam</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Philip</forename><surname>Bachman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joelle</forename><surname>Pineau</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Doina</forename><surname>Precup</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">David</forename><surname>Meger</surname></persName>
+		</author>
+		<title level="m">Deep reinforcement learning that matters. arXiv</title>
+				<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b28">
+	<analytic>
+		<title level="a" type="main">A tail inequality for quadratic forms of subgaussian random vectors</title>
+		<author>
+			<persName><forename type="first">Daniel</forename><surname>Hsu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sham</forename><surname>Kakade</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tong</forename><surname>Zhang</surname></persName>
+		</author>
+		<idno type="DOI">10.1214/ecp.v17-2079</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Electronic Communications in Probability</title>
+		<title level="j" type="abbrev">Electron. Commun. Probab.</title>
+		<idno type="ISSN">1083-589X</idno>
+		<imprint>
+			<biblScope unit="volume">17</biblScope>
+			<biblScope unit="issue">none</biblScope>
+			<date type="published" when="2012-01-01" />
+			<publisher>Institute of Mathematical Statistics</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b29">
+	<analytic>
+		<title level="a" type="main">Near-optimal regret bounds for reinforcement learning</title>
+		<author>
+			<persName><forename type="first">Thomas</forename><surname>Jaksch</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ronald</forename><surname>Ortner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Peter</forename><surname>Auer</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Machine Learning Research</title>
+		<imprint>
+			<date type="published" when="2010" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b30">
+	<monogr>
+		<author>
+			<persName><forename type="first">Nan</forename><surname>Jiang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Akshay</forename><surname>Krishnamurthy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alekh</forename><surname>Agarwal</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">John</forename><surname>Langford</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Robert</forename><forename type="middle">E</forename><surname>Schapire</surname></persName>
+		</author>
+		<title level="m">Contextual decision processes with low bellman rank are pac-learnable. arXiv</title>
+				<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b31">
+	<analytic>
+		<title level="a" type="main">Exploration in metric state spaces</title>
+		<author>
+			<persName><forename type="first">Sham</forename><surname>Kakade</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Michael</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">John</forename><surname>Kearns</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Langford</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the 20th International Conference on Machine Learning (ICML-03)</title>
+				<meeting>the 20th International Conference on Machine Learning (ICML-03)</meeting>
+		<imprint>
+			<date type="published" when="2003" />
+			<biblScope unit="page" from="306" to="312" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b32">
+	<analytic>
+		<title level="a" type="main">Near-optimal reinforcement learning in polynomial time</title>
+		<author>
+			<persName><forename type="first">Michael</forename><surname>Kearns</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Satinder</forename><surname>Singh</surname></persName>
+		</author>
+		<idno type="DOI">10.1023/a:1017984413808</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Machine Learning</title>
+		<idno type="ISSN">0885-6125</idno>
+		<imprint>
+			<biblScope unit="volume">49</biblScope>
+			<biblScope unit="issue">2/3</biblScope>
+			<biblScope unit="page" from="209" to="232" />
+			<date type="published" when="2002" />
+			<publisher>Springer Science and Business Media LLC</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b33">
+	<analytic>
+		<title level="a" type="main">Least-squares policy iteration</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Michail</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ronald</forename><surname>Lagoudakis</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Parr</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of machine learning research</title>
+		<imprint>
+			<biblScope unit="volume">4</biblScope>
+			<biblScope unit="page" from="1107" to="1149" />
+			<date type="published" when="2003-12" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b34">
+	<monogr>
+		<author>
+			<persName><forename type="first">Nir</forename><surname>Levine</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tom</forename><surname>Zahavy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Daniel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Aviv</forename><surname>Mankowitz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shie</forename><surname>Tamar</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Mannor</surname></persName>
+		</author>
+		<title level="m">Shallow updates for deep reinforcement learning. arXiv</title>
+				<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b35">
+	<monogr>
+		<title level="m" type="main">End-to-end training of deep visuomotor policies</title>
+		<author>
+			<persName><forename type="first">Sergey</forename><surname>Levine</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2016" />
+			<publisher>JMLR</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b36">
+	<analytic>
+		<title level="a" type="main">A contextual-bandit approach to personalized news article recommendation</title>
+		<author>
+			<persName><forename type="first">Lihong</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Wei</forename><surname>Chu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">John</forename><surname>Langford</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Robert</forename><forename type="middle">E</forename><surname>Schapire</surname></persName>
+		</author>
+		<idno type="DOI">10.1145/1772690.1772758</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the 19th international conference on World wide web - WWW &apos;10</title>
+				<meeting>the 19th international conference on World wide web - WWW &apos;10</meeting>
+		<imprint>
+			<publisher>ACM Press</publisher>
+			<date type="published" when="2010" />
+			<biblScope unit="page" from="661" to="670" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b37">
+	<monogr>
+		<title level="m" type="main">Combating reinforcement learning&apos;s sisyphean curse with intrinsic fear</title>
+		<author>
+			<persName><forename type="first">Kamyar</forename><surname>Zachary C Lipton</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Abhishek</forename><surname>Azizzadenesheli</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lihong</forename><surname>Kumar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jianfeng</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Li</forename><surname>Gao</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Deng</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1611.01211</idno>
+		<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b38">
+	<monogr>
+		<title level="m" type="main">Efficient exploration for dialogue policy learning with bbq networks &amp; replay buffer spiking</title>
+		<author>
+			<persName><forename type="first">Jianfeng</forename><surname>Zachary C Lipton</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lihong</forename><surname>Gao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Xiujun</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Faisal</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Li</forename><surname>Ahmed</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Deng</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1608.05081</idno>
+		<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b39">
+	<monogr>
+		<title level="m" type="main">Revisiting the arcade learning environment: Evaluation protocols and open problems for general agents</title>
+		<author>
+			<persName><forename type="first">C</forename><surname>Marlos</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Machado</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Marc</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Erik</forename><surname>Bellemare</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joel</forename><surname>Talvitie</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matthew</forename><surname>Veness</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Michael</forename><surname>Hausknecht</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Bowling</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1709.06009</idno>
+		<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b40">
+	<analytic>
+		<title level="a" type="main">Human-level control through deep reinforcement learning</title>
+		<author>
+			<persName><forename type="first">Volodymyr</forename><surname>Mnih</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Koray</forename><surname>Kavukcuoglu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">David</forename><surname>Silver</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Andrei</forename><forename type="middle">A</forename><surname>Rusu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joel</forename><surname>Veness</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Marc</forename><forename type="middle">G</forename><surname>Bellemare</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alex</forename><surname>Graves</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Riedmiller</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Andreas</forename><forename type="middle">K</forename><surname>Fidjeland</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Georg</forename><surname>Ostrovski</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Stig</forename><surname>Petersen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Charles</forename><surname>Beattie</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Amir</forename><surname>Sadik</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ioannis</forename><surname>Antonoglou</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Helen</forename><surname>King</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dharshan</forename><surname>Kumaran</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Daan</forename><surname>Wierstra</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shane</forename><surname>Legg</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Demis</forename><surname>Hassabis</surname></persName>
+		</author>
+		<idno type="DOI">10.1038/nature14236</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Nature</title>
+		<title level="j" type="abbrev">Nature</title>
+		<idno type="ISSN">0028-0836</idno>
+		<idno type="ISSNe">1476-4687</idno>
+		<imprint>
+			<biblScope unit="volume">518</biblScope>
+			<biblScope unit="issue">7540</biblScope>
+			<biblScope unit="page" from="529" to="533" />
+			<date type="published" when="2015-02-25" />
+			<publisher>Springer Science and Business Media LLC</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b41">
+	<analytic>
+		<title level="a" type="main">Logarithmic Online Regret Bounds for Undiscounted Reinforcement Learning</title>
+		<author>
+			<persName><forename type="first">Ronald</forename><surname>Ortner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Daniil</forename><surname>Ryabko</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/7503.003.0011</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 19</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2007" />
+			<biblScope unit="page" from="1763" to="1771" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b42">
+	<analytic>
+		<title level="a" type="main">Motivated Reinforcement Learning</title>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Osband</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Benjamin</forename><surname>Van Roy</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/1120.003.0006</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 14</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2002" />
+			<biblScope unit="page" from="1466" to="1474" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b43">
+	<analytic>
+		<title level="a" type="main">Near-optimal reinforcement learning in factored mdps</title>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Osband</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Benjamin</forename><surname>Van Roy</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems</title>
+				<imprint>
+			<date type="published" when="2014" />
+			<biblScope unit="page" from="604" to="612" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b44">
+	<analytic>
+		<title level="a" type="main">(more) efficient reinforcement learning via posterior sampling</title>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Osband</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dan</forename><surname>Russo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Benjamin</forename><surname>Van Roy</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems</title>
+				<imprint>
+			<date type="published" when="2013" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b45">
+	<monogr>
+		<title level="m" type="main">Generalization and exploration via randomized value functions</title>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Osband</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Zheng</forename><surname>Benjamin Van Roy</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Wen</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2014" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv</note>
+</biblStruct>
+
+<biblStruct xml:id="b46">
+	<analytic>
+		<title level="a" type="main">Detecting Humans via Their Pose</title>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Osband</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Charles</forename><surname>Blundell</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alexander</forename><surname>Pritzel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Benjamin</forename><surname>Van Roy</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/7503.003.0026</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 19</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2007" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b47">
+	<monogr>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Osband</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Daniel</forename><surname>Russo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Zheng</forename><surname>Wen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Benjamin</forename><surname>Van Roy</surname></persName>
+		</author>
+		<title level="m">Deep exploration via randomized value functions. arXiv</title>
+				<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b48">
+	<monogr>
+		<title level="m" type="main">Count-based exploration with neural density models</title>
+		<author>
+			<persName><forename type="first">Georg</forename><surname>Ostrovski</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Marc</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Aaron</forename><surname>Bellemare</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Rémi</forename><surname>Van Den Oord</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Munos</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b49">
+	<monogr>
+		<title level="m" type="main">Gaussian Processes for Machine Learning</title>
+		<author>
+			<persName><forename type="first">Carl</forename><forename type="middle">Edward</forename><surname>Rasmussen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Christopher</forename><forename type="middle">K I</forename><surname>Williams</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/3206.001.0001</idno>
+		<imprint>
+			<date type="published" when="2005" />
+			<publisher>The MIT Press</publisher>
+			<biblScope unit="volume">1</biblScope>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b50">
+	<analytic>
+		<title level="a" type="main">Linearly Parameterized Bandits</title>
+		<author>
+			<persName><forename type="first">Paat</forename><surname>Rusmevichientong</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">John</forename><forename type="middle">N</forename><surname>Tsitsiklis</surname></persName>
+		</author>
+		<idno type="DOI">10.1287/moor.1100.0446</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematics of Operations Research</title>
+		<title level="j" type="abbrev">Mathematics of OR</title>
+		<idno type="ISSN">0364-765X</idno>
+		<idno type="ISSNe">1526-5471</idno>
+		<imprint>
+			<biblScope unit="volume">35</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="395" to="411" />
+			<date type="published" when="2010-05" />
+			<publisher>Institute for Operations Research and the Management Sciences (INFORMS)</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b51">
+	<analytic>
+		<title level="a" type="main">Learning to Optimize via Posterior Sampling</title>
+		<author>
+			<persName><forename type="first">Daniel</forename><surname>Russo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Benjamin</forename><surname>Van Roy</surname></persName>
+		</author>
+		<idno type="DOI">10.1287/moor.2014.0650</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematics of Operations Research</title>
+		<title level="j" type="abbrev">Mathematics of OR</title>
+		<idno type="ISSN">0364-765X</idno>
+		<idno type="ISSNe">1526-5471</idno>
+		<imprint>
+			<biblScope unit="volume">39</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="1221" to="1243" />
+			<date type="published" when="2014-11" />
+			<publisher>Institute for Operations Research and the Management Sciences (INFORMS)</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b52">
+	<analytic>
+		<title level="a" type="main">Learning to Optimize via Information-Directed Sampling</title>
+		<author>
+			<persName><forename type="first">Daniel</forename><surname>Russo</surname></persName>
+			<idno type="ORCID">0000-0001-5926-8624</idno>
+		</author>
+		<author>
+			<persName><forename type="first">Benjamin</forename><surname>Van Roy</surname></persName>
+		</author>
+		<idno type="DOI">10.1287/opre.2017.1663</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Operations Research</title>
+		<title level="j" type="abbrev">Operations Research</title>
+		<idno type="ISSN">0030-364X</idno>
+		<idno type="ISSNe">1526-5463</idno>
+		<imprint>
+			<biblScope unit="volume">66</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="230" to="252" />
+			<date type="published" when="2018-02" />
+			<publisher>Institute for Operations Research and the Management Sciences (INFORMS)</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b53">
+	<monogr>
+		<title level="m" type="main">Safe, multi-agent, reinforcement learning for autonomous driving</title>
+		<author>
+			<persName><forename type="first">Shai</forename><surname>Shalev-Shwartz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shaked</forename><surname>Shammah</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Amnon</forename><surname>Shashua</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv</note>
+</biblStruct>
+
+<biblStruct xml:id="b54">
+	<analytic>
+		<title level="a" type="main">Mastering the game of Go without human knowledge</title>
+		<author>
+			<persName><forename type="first">David</forename><surname>Silver</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Julian</forename><surname>Schrittwieser</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Karen</forename><surname>Simonyan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ioannis</forename><surname>Antonoglou</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Aja</forename><surname>Huang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Arthur</forename><surname>Guez</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Thomas</forename><surname>Hubert</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lucas</forename><surname>Baker</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matthew</forename><surname>Lai</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Adrian</forename><surname>Bolton</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yutian</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Timothy</forename><surname>Lillicrap</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Fan</forename><surname>Hui</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Laurent</forename><surname>Sifre</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">George</forename><surname>Van Den Driessche</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Thore</forename><surname>Graepel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Demis</forename><surname>Hassabis</surname></persName>
+		</author>
+		<idno type="DOI">10.1038/nature24270</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Nature</title>
+		<title level="j" type="abbrev">Nature</title>
+		<idno type="ISSN">0028-0836</idno>
+		<idno type="ISSNe">1476-4687</idno>
+		<imprint>
+			<biblScope unit="volume">550</biblScope>
+			<biblScope unit="issue">7676</biblScope>
+			<biblScope unit="page" from="354" to="359" />
+			<date type="published" when="2017-10" />
+			<publisher>Springer Science and Business Media LLC</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b55">
+	<monogr>
+		<author>
+			<persName><forename type="first">Jasper</forename><surname>Snoek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Oren</forename><surname>Rippel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Kevin</forename><surname>Swersky</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ryan</forename><surname>Kiros</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Nadathur</forename><surname>Satish</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Narayanan</forename><surname>Sundaram</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mostofa</forename><surname>Patwary</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mr</forename><surname>Prabhat</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ryan</forename><surname>Adams</surname></persName>
+		</author>
+		<title level="m">Scalable bayesian optimization using deep neural networks. In ICML</title>
+				<imprint>
+			<date type="published" when="2015" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b56">
+	<analytic>
+		<title level="a" type="main">Efficient hierarchical MCMC for policy search</title>
+		<author>
+			<persName><forename type="first">Malcolm</forename><surname>Strens</surname></persName>
+		</author>
+		<idno type="DOI">10.1145/1015330.1015381</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Twenty-first international conference on Machine learning - ICML &apos;04</title>
+				<imprint>
+			<publisher>ACM Press</publisher>
+			<date type="published" when="2004" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b57">
+	<analytic>
+		<title level="a" type="main">Temporal difference learning and TD-Gammon</title>
+		<author>
+			<persName><forename type="first">Gerald</forename><surname>Tesauro</surname></persName>
+		</author>
+		<idno type="DOI">10.1145/203330.203343</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Communications of the ACM</title>
+		<title level="j" type="abbrev">Commun. ACM</title>
+		<idno type="ISSN">0001-0782</idno>
+		<idno type="ISSNe">1557-7317</idno>
+		<imprint>
+			<biblScope unit="volume">38</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="58" to="68" />
+			<date type="published" when="1995-03" />
+			<publisher>Association for Computing Machinery (ACM)</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>

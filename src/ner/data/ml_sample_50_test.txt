@@ -1,0 +1,5 @@
+6	black-box optimization methods	switch cost-aware optimization	Lazy Modular Bayesian Optimization	LaMBO	image segmentation	Bayesian optimization algorithms	0	0	0	0	1	0
+4	fuzzy-possibilistic c-means clustering	Fuzzy-Possibilistic Index	microarray gene expression data clustering	medical image segmentation	0	0	1	1
+15	Electrocardiogram detection	digital signal processing	deep learning	DL	classification	image segmentation	U-Net	one-dimensional data	PhysioNet's QT database	ambulatory ECG recordings	data regularization	pre-training with low-quality data labels	data augmentation	model regularizers	5-fold cross-validation	0	0	0	0	1	1	0	2	2	2	0	0	0	0	0
+15	Boosting	computer vision	structured support vector machines	SSVM	boosting algorithm	structured output prediction	StructBoost	nonlinear structured learning	SVM	AdaBoost	LPBoost	cutting-plane method	hierarchical multi-class classification	visual tracking	image segmentation	0	1	0	0	0	1	0	0	0	0	0	0	1	1	1
+9	Online Normalization	Batch Normalization	automatic differentiation	statistical normalization	recurrent networks	fully connected networks	image classification	image segmentation	language modeling	0	0	0	0	0	0	1	1	1

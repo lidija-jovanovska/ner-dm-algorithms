@@ -1,0 +1,886 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">DIAGNOSING AND ENHANCING VAE MODELS</title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author>
+							<persName><forename type="first">Bin</forename><surname>Dai</surname></persName>
+							<affiliation key="aff0">
+								<orgName type="department">Institute for Advanced Study</orgName>
+								<orgName type="institution">Tsinghua University</orgName>
+								<address>
+									<settlement>Beijing</settlement>
+									<country key="CN">China</country>
+								</address>
+							</affiliation>
+						</author>
+						<author role="corresp">
+							<persName><forename type="first">David</forename><surname>Wipf</surname></persName>
+							<email>davidwipf@gmail.com</email>
+							<affiliation key="aff1">
+								<orgName type="institution">Microsoft Research</orgName>
+								<address>
+									<settlement>Beijing</settlement>
+									<country key="CN">China</country>
+								</address>
+							</affiliation>
+						</author>
+						<title level="a" type="main">DIAGNOSING AND ENHANCING VAE MODELS</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date/>
+						</imprint>
+					</monogr>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.6.2" ident="GROBID" when="2022-03-08T15:30+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>Although variational autoencoders (VAEs) represent a widely influential deep generative model, many aspects of the underlying energy function remain poorly understood. In particular, it is commonly believed that Gaussian encoder/decoder assumptions reduce the effectiveness of VAEs in generating realistic samples. In this regard, we rigorously analyze the VAE objective, differentiating situations where this belief is and is not actually true. We then leverage the corresponding insights to develop a simple VAE enhancement that requires no additional hyperparameters or sensitive tuning. Quantitatively, this proposal produces crisp samples and stable FID scores that are actually competitive with a variety of GAN models, all while retaining desirable attributes of the original VAE architecture. The code for our model is available at https://github.com/daib13/TwoStageVAE.</p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1">INTRODUCTION</head><p>Our starting point is the desire to learn a probabilistic generative model of observable variables x ∈ χ, where χ is a r-dimensional manifold embedded in R d . Note that if r = d, then this assumption places no restriction on the distribution of x ∈ R d whatsoever; however, the added formalism is introduced to handle the frequently encountered case where x possesses low-dimensional structure relative to a high-dimensional ambient space, i.e., r d. In fact, the very utility of generative models of continuous data, and their attendant low-dimensional representations, often hinges on this assumption <ref type="bibr" target="#b1">(Bengio et al., 2013)</ref>. It therefore behooves us to explicitly account for this situation.</p><p>Beyond this, we assume that χ is a simple Riemannian manifold, which means there exists a diffeomorphism ϕ between χ and R r , or more explicitly, the mapping ϕ : χ → R r is invertible and differentiable. Denote a ground-truth probability measure on χ as µ gt such that the probability mass of an infinitesimal dx on the manifold is µ gt (dx) and χ µ gt (dx) = 1.</p><p>The variational autoencoder (VAE) <ref type="bibr" target="#b17">(Kingma &amp; Welling, 2014;</ref><ref type="bibr" target="#b28">Rezende et al., 2014)</ref> attempts to approximate this ground-truth measure using a parameterized density p θ (x) defined across all of R d since any underlying generative manifold is unknown in advance. This density is further assumed to admit the latent decomposition p θ (x) = p θ (x|z)p(z)dz, where z ∈ R κ serves as a lowdimensional representation, with κ ≈ r and prior p(z) = N (z|0, I).</p><p>Ideally we might like to minimize the negative log-likelihood − log p θ (x) averaged across the ground-truth measure µ gt , i.e., solve min θ χ − log p θ (x)µ gt (dx). Unfortunately though, the required marginalization over z is generally infeasible. Instead the VAE model relies on tractable encoder q φ (z|x) and decoder p θ (x|z) distributions, where φ represents additional trainable parameters. The canonical VAE cost is a bound on the average negative log-likelihood given by L(θ, φ) χ {− log p θ (x) + KL [q φ (z|x)||p θ (z|x)]} µ gt (dx) ≥ χ − log p θ (x)µ gt (dx), (1)</p><p>where the inequality follows directly from the non-negativity of the KL-divergence. Here φ can be viewed as tuning the tightness of bound, while θ dictates the actual estimation of µ gt . Using a few standard manipulations, this bound can also be expressed as</p><formula xml:id="formula_0">L(θ, φ) = χ −E q φ (z|x) [log p θ (x|z)] + KL [q φ (z|x)||p(z)] µ gt (dx),<label>(2)</label></formula><p>which explicitly involves the encoder/decoder distributions and is conveniently amenable to SGD optimization of {θ, φ} via a reparameterization trick <ref type="bibr" target="#b17">(Kingma &amp; Welling, 2014;</ref><ref type="bibr" target="#b28">Rezende et al., 2014)</ref>. The first term in (2) can be viewed as a reconstruction cost (or a stochastic analog of a traditional autoencoder), while the second penalizes posterior deviations from the prior p(z). Additionally, for any realizable implementation via SGD, the integration over χ must be approximated via a finite sum across training samples {x (i) } n i=1 drawn from µ gt . Nonetheless, examining the true objective L(θ, φ) can lead to important, practically-relevant insights.</p><p>At least in principle, q φ (z|x) and p θ (x|z) can be arbitrary distributions, in which case we could simply enforce q φ (z|x) = p θ (z|x) ∝ p θ (x|z)p(z) such that the bound from (1) is tight. Unfortunately though, this is essentially always an intractable undertaking. Consequently, largely to facilitate practical implementation, a commonly adopted distributional assumption for continuous data is that both q φ (z|x) and p θ (x|z) are Gaussian. This design choice has previously been cited as a key limitation of VAEs <ref type="bibr" target="#b5">(Burda et al., 2015;</ref><ref type="bibr" target="#b18">Kingma et al., 2016)</ref>, and existing quantitative tests of generative modeling quality thus far dramatically favor contemporary alternatives such as generative adversarial networks (GAN) <ref type="bibr" target="#b13">(Goodfellow et al., 2014)</ref>. Regardless, because the VAE possesses certain desirable properties relative to GAN models (e.g., stable training <ref type="bibr" target="#b29">(Tolstikhin et al., 2018)</ref>, interpretable encoder/inference network <ref type="bibr" target="#b4">(Brock et al., 2016)</ref>, outlier-robustness <ref type="bibr" target="#b9">(Dai et al., 2018)</ref>, etc.), it remains a highly influential paradigm worthy of examination and enhancement.</p><p>In Section 2 we closely investigate the implications of VAE Gaussian assumptions leading to a number of interesting diagnostic conclusions. In particular, we differentiate the situation where r = d, in which case we prove that recovering the ground-truth distribution is actually possible iff the VAE global optimum is reached, and r &lt; d, in which case the VAE global optimum can be reached by solutions that reflect the ground-truth distribution almost everywhere, but not necessarily uniquely so. In other words, there could exist alternative solutions that both reach the global optimum and yet do not assign the same probability measure as µ gt .</p><p>Section 3 then further probes this non-uniqueness issue by inspecting necessary conditions of global optima when r &lt; d. This analysis reveals that an optimal VAE parameterization will provide an encoder/decoder pair capable of perfectly reconstructing all x ∈ χ using any z drawn from q φ (z|x). Moreover, we demonstrate that the VAE accomplishes this using a degenerate latent code whereby only r dimensions are effectively active. Collectively, these results indicate that the VAE global optimum can in fact uniquely learn a mapping to the correct ground-truth manifold when r &lt; d, but not necessarily the correct probability measure within this manifold, a critical distinction.</p><p>Next we leverage these analytical results in Section 4 to motivate an almost trivially-simple, twostage VAE enhancement for addressing typical regimes when r &lt; d. In brief, the first stage just learns the manifold per the allowances from Section 3, and in doing so, provides a mapping to a lower dimensional intermediate representation with no degenerate dimensions that mirrors the r = d regime. The second (much smaller) stage then only needs to learn the correct probability measure on this intermediate representation, which is possible per the analysis from Section 2. Experiments from Sections 5 and 6 empirically corroborate motivational theory and reveal that the proposed two-stage procedure can generate high-quality samples, reducing the blurriness often attributed to VAE models in the past <ref type="bibr" target="#b11">(Dosovitskiy &amp; Brox, 2016;</ref><ref type="bibr" target="#b21">Larsen et al., 2015)</ref>. And to the best of our knowledge, this is the first demonstration of a VAE pipeline that can produce stable FID scores, an influential recent metric for evaluating generated sample quality <ref type="bibr" target="#b16">(Heusel et al., 2017)</ref>, that are comparable to GAN models under neutral testing conditions. Moreover, this is accomplished without additional penalties, cost function modifications, or sensitive tuning parameters. Finally, an extended version of this work can be found in <ref type="bibr" target="#b8">(Dai &amp; Wipf, 2019)</ref>. There we include additional results, consideration of disentangled representations, as well as a comparative discussion of broader VAE modeling paradigms such as those involving normalizing flows or parameterized families for p(z).</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2">HIGH-LEVEL IMPACT OF VAE GAUSSIAN ASSUMPTIONS</head><p>Conventional wisdom suggests that VAE Gaussian assumptions will introduce a gap between L(θ, φ) and the ideal negative log-likelihood χ − log p θ (x)µ gt (dx), compromising efforts to learn the ground-truth measure. However, we will now argue that this pessimism is in some sense premature. In fact, we will demonstrate that, even with the stated Gaussian distributions, there exist parameters φ and θ that can simultaneously: (i) Globally optimize the VAE objective and, (ii) Recover the ground-truth probability measure in a certain sense described below. This is possible because, at least for some coordinated values of φ and θ, q φ (z|x) and p θ (z|x) can indeed become arbitrarily close. Before presenting the details, we first formalize a κ-simple VAE, which is merely a VAE model with explicit Gaussian assumptions and parameterizations: Definition 1 A κ-simple VAE is defined as a VAE model with dim[z] = κ latent dimensions, the Gaussian encoder q φ (z|x) = N (z|µ z , Σ z ), and the Gaussian decoder p θ (x|z) = N (x|µ x , Σ x ). Moreover, the encoder moments are defined as µ z = f µz (x; φ) and Σ z = S z S z with S z = f Sz (x; φ). Likewise, the decoder moments are µ x = f µx (z; θ) and Σ x = γI. Here γ &gt; 0 is a tunable scalar, while f µz , f Sz and f µx specify parameterized differentiable functional forms that can be arbitrarily complex, e.g., a deep neural network.</p><p>Equipped with these definitions, we will now demonstrate that a κ-simple VAE, with κ ≥ r, can achieve the optimality criteria (i) and (ii) from above. In doing so, we first consider the simpler case where r = d, followed by the extended scenario with r &lt; d. The distinction between these two cases turns out to be significant, with practical implications to be explored in Section 4.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.1">MANIFOLD DIMENSION EQUAL TO AMBIENT SPACE DIMENSION (r = d)</head><p>We first analyze the specialized situation where r = d. Assuming p gt (x) µ gt (dx)/dx exists everywhere in R d , then p gt (x) represents the ground-truth probability density with respect to the standard Lebesgue measure in Euclidean space. Given these considerations, the minimal possible value of (1) will necessarily occur if KL [q φ (z|x)||p θ (z|x)] = 0 and p θ (x) = p gt (x) almost everywhere.</p><p>(</p><formula xml:id="formula_1">)<label>3</label></formula><p>This follows because by VAE design it must be that L(θ, φ) ≥ − p gt (x) log p gt (x)dx, and in the present context, this lower bound is achievable iff the conditions from (3) hold. Collectively, this implies that the approximate posterior produced by the encoder q φ (z|x) is in fact perfectly matched to the actual posterior p θ (z|x), while the corresponding marginalized data distribution p θ (x) is perfectly matched the ground-truth density p gt (x) as desired. Perhaps surprisingly, a κ-simple VAE can actually achieve such a solution:</p><p>Theorem 1 Suppose that r = d and there exists a density p gt (x) associated with the ground-truth measure µ gt that is nonzero everywhere on R d . 1 . Then for any κ ≥ r, there is a sequence of κ-simple VAE model parameters {θ * t , φ * t } such that lim All the proofs can be found in <ref type="bibr" target="#b8">(Dai &amp; Wipf, 2019)</ref>. So at least when r = d, the VAE Gaussian assumptions need not actually prevent the optimal ground-truth probability measure from being recovered, as long as the latent dimension is sufficiently large (i.e., κ ≥ r). And contrary to popular notions, a richer class of distributions is not required to achieve this. Of course Theorem 1 only applies to a restricted case that excludes d &gt; r; however, later we will demonstrate that a key consequence of this result can nonetheless be leveraged to dramatically enhance VAE performance.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.2">MANIFOLD DIMENSION LESS THAN AMBIENT SPACE DIMENSION (r &lt; d)</head><p>When r &lt; d, additional subtleties are introduced that will be unpacked both here and in the sequel.</p><p>To begin, if both q φ (z|x) and p θ (x|z) are arbitrary/unconstrained (i.e., not necessarily Gaussian), then inf φ,θ L(θ, φ) = −∞. To achieve this global optimum, we need only choose φ such that q φ (z|x) = p θ (z|x) (minimizing the KL term from (1)) while selecting θ such that all probability mass collapses to the correct manifold χ. In this scenario the density p θ (x) will become unbounded on χ and zero elsewhere, such that χ − log p θ (x)µ gt (dx) will approach negative infinity.</p><p>But of course the stated Gaussian assumptions from the κ-simple VAE model could ostensibly prevent this from occurring by causing the KL term to blow up, counteracting the negative loglikelihood factor. We will now analyze this case to demonstrate that this need not happen. Before proceeding to this result, we first define a manifold densityp gt (x) as the probability density (assuming it exists) of µ gt with respect to the volume measure of the manifold χ. If d = r then this volume measure reduces to the standard Lebesgue measure in R d andp gt (x) = p gt (x); however, when d &gt; r a density p gt (x) defined in R d will not technically exist, whilep gt (x) is still perfectly well-defined. We then have the following:</p><p>Theorem 2 Assume r &lt; d and that there exists a manifold densityp gt (x) associated with the ground-truth measure µ gt that is nonzero everywhere on χ. Then for any κ ≥ r, there is a sequence of κ-simple VAE model parameters</p><formula xml:id="formula_2">{θ * t , φ * t } such that (i) lim t→∞ KL q φ * t (z|x)||p θ * t (z|x) = 0 and lim t→∞ χ − log p θ * t (x)µ gt (dx) = −∞,<label>(5)</label></formula><formula xml:id="formula_3">(ii) lim t→∞ x∈A p θ * t (x)dx = µ gt (A ∩ χ)<label>(6)</label></formula><p>for all measurable sets A ⊆ R d with µ gt (∂A ∩ χ) = 0, where ∂A is the boundary of A.</p><p>Technical details notwithstanding, Theorem 2 admits a very intuitive interpretation. First, ( <ref type="formula" target="#formula_2">5</ref>) directly implies that the VAE Gaussian assumptions do not prevent minimization of L(θ, φ) from converging to minus infinity, which can be trivially viewed as a globally optimum solution. Furthermore, based on ( <ref type="formula" target="#formula_3">6</ref>), this solution can be achieved with a limiting density estimate that will assign a probability mass to most all measurable subsets of R d that is indistinguishable from the groundtruth measure (which confines all mass to χ). Hence this solution is more-or-less an arbitrarily-good approximation to µ gt for all practical purposes. 2</p><p>Regardless, there is an absolutely crucial distinction between Theorem 2 and the simpler case quantified by Theorem 1. Although both describe conditions whereby the κ-simple VAE can achieve the minimal possible objective, in the r = d case achieving the lower bound (whether the specific parameterization for doing so is unique or not) necessitates that the ground-truth probability measure has been recovered almost everywhere. But the r &lt; d situation is quite different because we have not ruled out the possibility that a different set of parameters {θ, φ} could push L(θ, φ) to −∞ and yet not achieve (6). In other words, the VAE could reach the lower bound but fail to closely approximate µ gt . And we stress that this uniqueness issue is not a consequence of the VAE Gaussian assumptions per se; even if q φ (z|x) were unconstrained the same lack of uniqueness can persist.</p><p>Rather, the intrinsic difficulty is that, because the VAE model does not have access to the groundtruth low-dimensional manifold, it must implicitly rely on a density p θ (x) defined across all of R d as mentioned previously. Moreover, if this density converges towards infinity on the manifold during training without increasing the KL term at the same rate, the VAE cost can be unbounded from below, even in cases where ( <ref type="formula" target="#formula_3">6</ref>) is not satisfied, meaning incorrect assignment of probability mass.</p><p>To conclude, the key take-home message from this section is that, at least in principle, VAE Gaussian assumptions need not actually be the root cause of any failure to recover ground-truth distributions.</p><p>Instead we expose a structural deficiency that lies elsewhere, namely, the non-uniqueness of solutions that can optimize the VAE objective without necessarily learning a close approximation to µ gt . But to probe this issue further and motivate possible workarounds, it is critical to further disambiguate these optimal solutions and their relationship with ground-truth manifolds. This will be the task of Section 3, where we will explicitly differentiate the problem of locating the correct groundtruth manifold, from the task of learning the correct probability measure within the manifold.</p><p>Note that the only comparable prior work we are aware of related to the results in this section comes from <ref type="bibr" target="#b10">Doersch (2016)</ref>, where the implications of adopting Gaussian encoder/decoder pairs in the specialized case of r = d = 1 are briefly considered. Moreover, the analysis there requires additional much stronger assumptions than ours, namely, that p gt (x) should be nonzero and infinitely differentiable everywhere in the requisite 1D ambient space. These requirements of course exclude essentially all practical usage regimes where d = r &gt; 1 or d &gt; r, or when ground-truth densities are not sufficiently smooth.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3">OPTIMAL SOLUTIONS AND THE GROUND TRUTH MANIFOLD</head><p>We will now more closely examine the properties of optimal κ-simple VAE solutions, and in particular, the degree to which we might expect them to at least reflect the true χ, even if perhaps not the correct probability measure µ gt defined within χ. To do so, we must first consider some necessary conditions for VAE optima:</p><p>Theorem 3 Let {θ * γ , φ * γ } denote an optimal κ-simple VAE solution (with κ ≥ r) where the decoder variance γ is fixed (i.e., it is the sole unoptimized parameter). Moreover, we assume that µ gt is not a Gaussian distribution when d = r. 3 Then for any γ &gt; 0, there exists a γ &lt; γ such that</p><formula xml:id="formula_4">L(θ * γ , φ * γ ) &lt; L(θ * γ , φ * γ ).</formula><p>This result implies that we can always reduce the VAE cost by choosing a smaller value of γ, and hence, if γ is not constrained, it must be that γ → 0 if we wish to minimize (2). Despite this necessary optimality condition, in existing practical VAE applications, it is standard to fix γ ≈ 1 during training. This is equivalent to simply adopting a non-adaptive squared-error loss for the decoder and, at least in part, likely contributes to unrealistic/blurry VAE-generated samples <ref type="bibr" target="#b3">(Bousquet et al., 2017)</ref>. Regardless, there are more significant consequences of this intrinsic favoritism for γ → 0, in particular as related to reconstructing data drawn from the ground-truth manifold χ:</p><p>Theorem 4 Applying the same conditions and definitions as in Theorem 3, then for all x drawn from µ gt , we also have that</p><formula xml:id="formula_5">lim γ→0 f µx f µz (x; φ * γ ) + f Sz (x; φ * γ )ε; θ * γ = lim γ→0 f µx f µz (x; φ * γ ); θ * γ = x, ∀ε ∈ R κ . (7)</formula><p>By design any random draw z ∼ q φ * γ (z|x) can be expressed as f µz (x; φ * γ ) + f Sz (x; φ * γ )ε for some ε ∼ N (ε|0, I). From this vantage point then, (7) effectively indicates that any x ∈ χ will be perfectly reconstructed by the VAE encoder/decoder pair at globally optimal solutions, achieving this necessary condition despite any possible stochastic corrupting factor f Sz (x; φ * γ )ε. But still further insights can be obtained when we more closely inspect the VAE objective function behavior at arbitrarily small but explicitly nonzero values of γ. In particular, when κ = r (meaning z has no superfluous capacity), Theorem 4 and attendant analyses in <ref type="bibr" target="#b8">(Dai &amp; Wipf, 2019)</ref> ultimately imply that the squared eigenvalues of f Sz (x; φ * γ ) will become arbitrarily small at a rate proportional to γ, meaning 1 √ γ f Sz (x; φ * γ ) ≈ O(1) under mild conditions. It then follows that the VAE data term integrand from (2), in the neighborhood around optimal solutions, behaves as</p><formula xml:id="formula_6">−2E q φ * γ (z|x) log p θ * γ (x|z) = 2E q φ * γ (z|x) 1 γ x − f µx z; θ * γ 2 2 +d log 2πγ ≈ E q φ * γ (z|x) [O(1)] +d log 2πγ = d log γ +O(1).<label>(8</label></formula><p>) This expression can be derived by excluding the higher-order terms of a Taylor series approximation of</p><formula xml:id="formula_7">f µx f µz (x; φ * γ ) + f Sz (x; φ * γ )ε; θ * γ around the point f µz (x; φ * γ ), which will be relatively tight under the stated conditions. But because 2E q φ * γ (z|x) 1 γ x − f µx z; θ * γ 2 2 ≥ 0, a theoret- ical lower bound on (8) is given by d log 2πγ ≡ d log γ + O(1)</formula><p>. So in this sense (8) cannot be significantly lowered further. This observation is significant when we consider the inclusion of addition latent dimensions by allowing κ &gt; r. Clearly based on the analysis above, adding dimensions to z cannot improve the value of the VAE data term in any meaningful way. However, it can have a detrimental impact on the the KL regularization factor in the γ → 0 regime, where</p><formula xml:id="formula_8">2KL [q φ (z|x)||p(z)] ≡ trace [Σ z ] + µ z 2 2 − log |Σ z | ≈ −r log γ + O(1). (<label>9</label></formula><formula xml:id="formula_9">)</formula><p>Herer denotes the number of eigenvalues {λ j (γ)} κ j=1 of f Sz (x; φ * γ ) (or equivalently Σ z ) that satisfy λ j (γ) → 0 if γ → 0.r can be viewed as an estimate of how many low-noise latent dimensions the VAE model is preserving to reconstruct x. Based on (9), there is obvious pressure to maker as small as possible, at least without disrupting the data fit. The smallest possible value isr = r, since it is not difficult to show that any value below this will contribute consequential reconstruction errors, causing</p><formula xml:id="formula_10">2E q φ * γ (z|x) 1 γ x − f µx z; θ * γ 2</formula><p>2 to grow at a rate of Ω 1 γ , pushing the entire cost function towards infinity. <ref type="bibr">4</ref> Therefore, in the neighborhood of optimal solutions the VAE will naturally seek to produce perfect reconstructions using the fewest number of clean, low-noise latent dimensions, meaning dimensions whereby q φ (z|x) has negligible variance. For superfluous dimensions that are unnecessary for representing x, the associated encoder variance in these directions can be pushed to one. This will optimize KL [q φ (z|x)||p(z)] along these directions, and the decoder can selectively block the residual randomness to avoid influencing the reconstructions per Theorem 4. So in this sense the VAE is capable of learning a minimal representation of the ground-truth manifold χ when r &lt; κ.</p><p>But we must emphasize that the VAE can learn χ independently of the actual distribution µ gt within χ. Addressing the latter is a completely separate issue from achieving the perfect reconstruction error defined by Theorem 4. This fact can be understood within the context of a traditional PCAlike model, which is perfectly capable of learning a low-dimensional subspace containing some training data without actually learning the distribution of the data within this subspace. The central issue is that there exists an intrinsic bias associated with the VAE objective such that fitting the distribution within the manifold will be completely neglected whenever there exists the chance for even an infinitesimally better approximation of the manifold itself.</p><p>Stated differently, if VAE model parameters have learned a near optimal, parsimonious latent mapping onto χ using γ ≈ 0, then the VAE cost will scale as (d − r) log γ regardless of µ gt . Hence there remains a huge incentive to reduce the reconstruction error still further, allowing γ to push even closer to zero and the cost closer to −∞. And if we constrain γ to be sufficiently large so as to prevent this from happening, then we risk degrading/blurring the reconstructions and widening the gap between q φ (z|x) and p θ (z|x), which can also compromise estimation of µ gt . Fortunately though, as will be discussed next there is a convenient way around this dilemma by exploiting the fact that this dominanting (d − r) log γ factor goes away when d = r.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4">FROM THEORY TO PRACTICAL VAE ENHANCEMENTS</head><p>Sections 2 and 3 have exposed a collection of VAE properties with useful diagnostic value in and of themselves. But the practical utility of these results, beyond the underappreciated benefit of learning γ, warrant further exploration. In this regard, suppose we wish to develop a generative model of high-dimensional data x ∈ χ where unknown low-dimensional structure is significant (i.e., the r &lt; d case with r unknown). The results from Section 3 indicate that the VAE can partially handle this situation by learning a parsimonious representation of low-dimensional manifolds, but not necessarily the correct probability measure µ gt within such a manifold. In quantitative terms, this means that a decoder p θ (x|z) will map all samples from an encoder q φ (z|x) to the correct manifold such that the reconstruction error is negligible for any x ∈ χ. But if the measure µ gt on χ has not been accurately estimated, then <ref type="formula">10</ref>) where q φ (z) is sometimes referred to as the aggregated posterior <ref type="bibr" target="#b25">(Makhzani et al., 2016)</ref>. In other words, the distribution of the latent samples drawn from the encoder distribution, when averaged across the training data, will have lingering latent structure that is errantly incongruous with the original isotropic Gaussian prior. This then disrupts the pivotal ancestral sampling capability of the VAE, implying that samples drawn from N (z|0, I) and then passed through the decoder p θ (x|z) will not closely approximate µ gt . Fortunately, our analysis suggests the following two-stage remedy:</p><formula xml:id="formula_11">q φ (z) χ q φ (z|x)µ gt (dx) ≈ R d p θ (z|x)p θ (x)dx = R d p θ (x|z)p(z)dx = N (z|0, I), (</formula><p>1. Given n observed samples {x (i) } n i=1 , train a κ-simple VAE, with κ ≥ r, to estimate the unknown r-dimensional ground-truth manifold χ embedded in R d using a minimal number of active latent dimensions. Generate latent samples {z (i) } n i=1 via z (i) ∼ q φ (z|x <ref type="bibr">(i)</ref> ). By design, these samples will be distributed as q φ (z), but likely not N (z|0, I).</p><p>2. Train a second κ-simple VAE, with independent parameters {θ , φ } and latent representation u, to learn the unknown distribution q φ (z), i.e., treat q φ (z) as a new ground-truth distribution and use samples {z (i) } n i=1 to learn it. 3. Samples approximating the original ground-truth µ gt can then be formed via the extended ancestral process u ∼ N (u|0, I), z ∼ p θ (z|u), and finally x ∼ p θ (x|z).</p><p>The efficacy of the second-stage VAE from above is based on the following. If the first stage was successful, then even though they will not generally resemble N (z|0, I), samples from q φ (z) will nonetheless have nonzero measure across the full ambient space R κ . If κ = r, this occurs because the entire latent space is needed to represent an r-dimensional manifold, and if κ &gt; r, then the extra latent dimensions will be naturally filled in via randomness introduced along dimensions associated with nonzero eigenvalues of the decoder covariance Σ z per the analysis in Section 3.</p><p>Consequently, as long as we set κ ≥ r, the operational regime of the second-stage VAE is effectively equivalent to the situation described in Section 2.1 where the manifold dimension is equal to the ambient dimension. 5 And as we have already shown there via Theorem 1, the VAE can readily handle this situation, since in the narrow context of the second-stage VAE, d = r = κ, the troublesome (d − r) log γ factor becomes zero, and any globally minimizing solution is uniquely matched to the new ground-truth distribution q φ (z). Consequently, the revised aggregated posterior q φ (u) produced by the second-stage VAE should now closely resemble N (u|0, I). And importantly, because we generally assume that d κ ≥ r, we have found that the second-stage VAE can be quite small.</p><p>It should also be emphasized that concatenating the two VAE stages and jointly training does not generally improve the performance. If trained jointly the few extra second-stage parameters can simply be hijacked by the dominant influence of the first stage reconstruction term and forced to work on an incrementally better fit of the manifold rather than addressing the critical mismatch between q φ (z) and N (u|0, I). This observation can be empirically tested, which we have done in multiple ways. For example, we have tried fusing the respective encoders and decoders from the first and second stages to train what amounts to a slightly more complex single VAE model. We have also tried merging the two stages including the associated penalty terms. In both cases, joint training does not help at all as expected, with average performance no better than the first stage VAE (which contains the vast majority of parameters). Consequently, although perhaps counterintuitive, separate training of these two VAE stages is actually critical to achieving high quality results as will be demonstrated next.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5">QUANTITATIVE COMPARISONS OF GENERATED SAMPLE QUALITY</head><p>We first present quantitative evaluation of novel generated samples using the large-scale testing protocol of GAN models from <ref type="bibr" target="#b24">(Lucic et al., 2018)</ref>. In this regard, GANs are well-known to dramatically outperform existing VAE approaches in terms of the Fréchet Inception Distance (FID) score <ref type="bibr" target="#b16">(Heusel et al., 2017)</ref> and related quantitative metrics. For fair comparison, <ref type="bibr" target="#b24">(Lucic et al., 2018)</ref> adopted a common neutral architecture for all models, with generator and discriminator networks based on In-foGAN <ref type="bibr" target="#b6">(Chen et al., 2016a)</ref>; the point here is standardized comparisons, not tuning arbitrarily-large networks to achieve the lowest possible absolute FID values. We applied the same architecture to our first-stage VAE decoder and encoder networks respectively for direct comparison. For the lowdimensional second-stage VAE we used small, 3-layer networks contributing negligible additional parameters beyond the first stage (see <ref type="bibr" target="#b8">(Dai &amp; Wipf, 2019)</ref> for further design details).</p><p>We evaluated our proposed VAE pipeline, henceforth denoted as 2-Stage VAE, against three baseline VAE models differing only in the decoder output layer: a Gaussian layer with fixed γ, a Gaussian layer with a learned γ, and a cross-entropy layer as has been adopted in several previous applications involving images <ref type="bibr" target="#b7">(Chen et al., 2016b)</ref>. We also tested the Gaussian decoder VAE model (with learned γ) combined with an encoder augmented with normalizing flows <ref type="bibr" target="#b27">(Rezende &amp; Mohamed, 2015)</ref>, as well as the recently proposed Wasserstein autoencoder (WAE) <ref type="bibr" target="#b29">(Tolstikhin et al., 2018)</ref> which maintains a VAE-like structure. All of these models were adapted to use the same neutral architecture from <ref type="bibr" target="#b24">(Lucic et al., 2018)</ref>. Note also that the WAE includes two variants, referred to as WAE-MMD and WAE-GAN because different Maximum Mean Discrepancy (MMD) and GAN regularization factors are involved. We conduct experiments using the former because it does not involve potentially-unstable adversarial training, consistent with the other VAE baselines. <ref type="bibr">6</ref> Additionally, we present results from <ref type="bibr" target="#b24">(Lucic et al., 2018)</ref> involving numerous competing GAN models, including MM GAN <ref type="bibr" target="#b13">(Goodfellow et al., 2014)</ref>, WGAN , <ref type="bibr">WGAN-GP (Gulrajani et al., 2017)</ref>, NS GAN <ref type="bibr" target="#b12">(Fedus et al., 2017)</ref>, DRAGAN <ref type="bibr" target="#b19">(Kodali et al., 2017)</ref>, LS GAN <ref type="bibr" target="#b26">(Mao et al., 2017)</ref> and BEGAN <ref type="bibr" target="#b2">(Berthelot et al., 2017)</ref>. Testing is conducted across four significantly different datasets: <ref type="bibr">MNIST (LeCun et al., 1998)</ref>, Fashion MNIST <ref type="bibr" target="#b30">(Xiao et al., 2017)</ref>, <ref type="bibr">CIFAR-10 (Krizhevsky &amp; Hinton, 2009)</ref> and CelebA <ref type="bibr" target="#b23">(Liu et al., 2015)</ref>.</p><p>For each dataset we executed 10 independent trials and report the mean and standard deviation of the FID scores in Table <ref type="table">1</ref>. <ref type="bibr">7</ref> No effort was made to tune VAE training hyperparameters (e.g., learning rates, etc.); rather a single generic setting was first agnostically selected and then applied to all VAE-like models (including the WAE-MMD). As an analogous baseline, we also report the value of the best GAN model for each dataset when trained using suggested settings from the authors; no single model was optimal across all datasets, so these values represent the best performance from different, dataset-dependent GANs. Even so, our single 2-Stage VAE is still better on two of four datasets, and in aggregate, better than any individual GAN model. For example, when averaged across datasets, the mean FID score for any individual GAN trained with suggested settings was always approximately 45 or higher (see <ref type="bibr" target="#b24">(Lucic et al., 2018)</ref>[Figure <ref type="figure">4</ref>]), while our analogous 2-Stage VAE maintained a mean below 40. The other VAE baselines were not competitive. Note also that the relatively poor performance of the WAE-MMD on MNIST and Fashion MNIST data can be attributed to the sensitivity of this approach to the value of κ, which for consistency with other models was fixed at κ = 64 for all experiments. This value is likely much larger than actually needed for these simpler data types (meaning r 64), and the WAE-MMD model can potentially be more reliant on having some κ ≈ r. For head-to-head empirical tests of robustness to κ, please see <ref type="bibr" target="#b8">(Dai &amp; Wipf, 2019)</ref>.</p><p>Table <ref type="table">1</ref> also displays FID scores from GAN models evaluated using hyperparameters obtained from a large-scale search executed independently across each dataset to achieve the best results; 100 settings per model per dataset, plus an optimal, data-dependent stopping criteria as described in <ref type="bibr" target="#b24">(Lucic et al., 2018)</ref>. Within this broader paradigm, cases of severe mode collapse were omitted when computing final GAN FID averages. Despite these considerable GAN-specific advantages, the FID performance of the default 2-Stage VAE is well within the range of the heavily-optimized GAN models for each dataset unlike the other VAE baselines. Overall then, these results represent the first demonstration of a VAE pipeline capable of competing with GANs in the arena of generated sample quality. Additionally, representative samples produced using our 2-Stage VAE model can be found in <ref type="bibr" target="#b8">(Dai &amp; Wipf, 2019)</ref>.</p><p>Beyond the neutral testing platform from <ref type="bibr" target="#b24">(Lucic et al., 2018)</ref>, we also consider additional comparisons using the architecture and experimental setup from <ref type="bibr" target="#b29">(Tolstikhin et al., 2018)</ref> explicitly designed for applying WAE models to CelebA data. In particular, we adopt the exact same encoder-decoder networks as the WAE models, and train using the same number of epochs. We do not tune any hyperparameters whatsoever, and apply the same small second-stage VAE as used in previous experiments. As before, the second-stage size is a small fraction of the first stage, so any benefit is not simply the consequence of a larger network structure. Results are reported in Table <ref type="table">2</ref>, where the 2-Stage VAE even outperforms the WAE-GAN model, which has the advantage of adversarial training tuned for this combination of data and network architecture.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="6">EXPERIMENTAL CORROBORATION OF THEORETICAL RESULTS</head><p>The true test of any theoretical contribution is the degree to which it leads to useful, empiricallytestable predictions about behavior in real-world settings. In the present context, although our theory from Sections 2 and 3 involves some unavoidable simplifying assumptions, it nonetheless makes predictions that can be tested under practically-relevant conditions where these assumptions may Table <ref type="table">1</ref>: FID score comparisons using neutral architecture. For all GAN-based models listed in the top section of the table, reported values represent the optimal FID obtained across a large-scale hyperparameter search conducted separately for each dataset <ref type="bibr" target="#b24">(Lucic et al., 2018)</ref>. Outlier cases (e.g., severe mode collapse) were omitted, which would have otherwise increased these GAN FID scores. In the lower section of the table, the label Best GAN indicates the lowest FID produced across all GAN approaches for each dataset when trained using settings suggested by original authors; these approximate values were extracted from <ref type="bibr" target="#b24">(Lucic et al., 2018)</ref>[Figure <ref type="figure">4</ref>]. For the VAE results (including WAE), only a single default setting was adopted across all datasets and models (no tuning whatsoever), and no cases of mode collapse were removed. Note that specialized architectures and/or random seed optimization can potentially improve the FID for all models reported here. Table <ref type="table">2</ref>: FID scores on CelebA data obtained using the network structure and training protocol from <ref type="bibr" target="#b29">(Tolstikhin et al., 2018)</ref>. For the 2-Stage VAE, we apply the exact same architecture and training epochs without any tuning of hyperparameters.</p><p>not strictly hold. We now present the results of such tests, which provide strong confirmation of our previous analysis. In particular, after providing validation of Theorems 3 and 4, we explicitly demonstrate that the second stage of our 2-Stage VAE model can reduce the gap between q(z) and p(z).</p><p>Validation of Theorem 3: This theorem implies that γ will converge to zero at any global minimum of the stated VAE objective under consideration. Figure <ref type="figure" target="#fig_3">1a</ref> presents empirical support for this result, where indeed the decoder variance γ does tend towards zero during training (red line). This then allows for tighter image reconstructions (dark blue curve) with lower average squared error, i.e., a better manifold fit as expected.</p><p>Validation of Theorem 4: Figure <ref type="figure" target="#fig_3">1b</ref> bolsters this theorem, and the attendant analysis which follows in Section 3, by showcasing the dissimilar impact of noise factors applied to different directions in the latent space before passage through the decoder mean network f µx . In a direction where an eigenvalue λ j of Σ z is large (i.e., a superfluous dimension), a random perturbation is completely muted by the decoder as predicted. In contrast, in directions where such eigenvalues are small (i.e., needed for representing the manifold), varying the input causes large changes in the image space reflecting reasonable movement along the correct manifold.</p><p>Reduced Mismatch between q φ (z) and p(z): Although the VAE with a learnable γ can achieve high-quality reconstructions, the associated aggregated posterior is still likely not close to a standard Gaussian distribution as implied by (10). This mismatch then disrupts the critical ancestral sampling  The j-th eigenvalue of Σ z , denoted λ j , should be very close to either 0 or 1 as argued in Section 3. When λ j is close to 0, injecting noise along the corresponding direction will cause a large variance in the reconstructed image, meaning this direction is an informative one needed for representing the manifold. In contrast, if λ j is close to 1, the addition of noise does not make any appreciable difference in the reconstructed image, indicating that the corresponding dimension is a superfluous one that has been ignored/blocked by the decoder.   process. As we have previously argued, the proposed 2-Stage VAE has the ability to overcome this issue and achieve a standard Gaussian aggregated posterior, or at least nearly so. As empirical evidence for this claim, Figure <ref type="figure" target="#fig_4">2</ref> displays the singular value spectrum of latent sample matrices Z = {z (i) } n i=1 drawn from q φ (z) (first stage), and U = {u (i) } n i=1 drawn from q φ (u) (enhanced second stage). As expected, the latter is much closer to the spectrum from an analogous i.i.d. N (0, I) matrix. We also used these same sample matrices to estimate the MMD metric <ref type="bibr" target="#b14">(Gretton et al., 2007)</ref> between N (0, I) and the aggregated posterior distributions from the first and second stages in Table <ref type="table" target="#tab_1">3</ref>. Clearly the second stage has dramatically reduced the difference from N (0, I) as quantified by the MMD. Overall, these results indicate a superior latent representation, providing high-level support for our 2-Stage VAE proposal.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="7">DISCUSSION</head><p>It is often assumed that there exists an unavoidable trade-off between the stable training, valuable attendant encoder network, and resistance to mode collapse of VAEs, versus the impressive visual quality of images produced by GANs. While we certainly are not claiming that our two-stage VAE model is superior to the latest and greatest GAN-based architecture in terms of the realism of generated samples, we do strongly believe that this work at least narrows that gap substantially such that VAEs are worth considering in a broader range of applications. For further results and discussion, including consideration of broader VAE modeling paradigms and the identifiability of disentangled representations, please see <ref type="bibr" target="#b8">(Dai &amp; Wipf, 2019)</ref>.</p></div><figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_0"><head></head><label></label><figDesc>t→∞ KL q φ * t (z|x)||p θ * t (z|x) = 0 and lim t→∞ p θ * t (x) = p gt (x) almost everywhere. (4)</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_1"><head>VAE</head><label></label><figDesc></figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_3"><head>Figure 1 :</head><label>1</label><figDesc>Figure 1: (a) The red line shows the evolution of log γ, converging close to 0 during training as expected.The two blue curves compare the associated pixel-wise reconstruction errors with γ fixed at 1 and with a learnable γ respectively. (b) The j-th eigenvalue of Σ z , denoted λ j , should be very close to either 0 or 1 as argued in Section 3. When λ j is close to 0, injecting noise along the corresponding direction will cause a large variance in the reconstructed image, meaning this direction is an informative one needed for representing the manifold. In contrast, if λ j is close to 1, the addition of noise does not make any appreciable difference in the reconstructed image, indicating that the corresponding dimension is a superfluous one that has been ignored/blocked by the decoder.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_4"><head>Figure 2 :</head><label>2</label><figDesc>Figure 2: Singular value spectrums of latent sample matrices drawn from q φ (z) (first stage) and q φ (u) (enhanced second stage).</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_1"><head>Table 3 :</head><label>3</label><figDesc>Maximum mean discrepancy between N (0, I) and q φ (z) (first stage); likewise for q φ (u) (second stage).</figDesc><table /></figure>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="1">This nonzero assumption can be replaced with a much looser condition. Specifically, if there exists a diffeomorphism between the set {x|pgt(x) = 0} and R d , then it can be shown that Theorem 1 still holds even if pgt(x) = 0 for some x ∈ R d .</note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="2">Note that (6) is only framed in this technical way to accommodate the difficulty of comparing a measure µgt restricted to χ with the VAE density p θ (x) defined everywhere in R d . See<ref type="bibr" target="#b8">(Dai &amp; Wipf, 2019)</ref> for details.</note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="3">This requirement is only included to avoid a practically irrelevant form of non-uniqueness that exists with full, non-degenerate Gaussian distributions.</note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="4">Note that infγ&gt;0 C γ + log γ = ∞ for any C &gt; 0.</note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="5">Note that if a regular autoencoder were used to replace the first-stage VAE, then this would no longer be the case, so indeed a VAE is required for both stages unless we have strong prior knowledge such that we may confidently set κ ≈ r.</note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="6">Later we compare against both WAE-MMD and WAE-GAN using the setup from<ref type="bibr" target="#b29">(Tolstikhin et al., 2018)</ref>.7  All reported FID scores for VAE and GAN models were computed using TensorFlow (https:// github.com/bioinf-jku/TTUR). We have found that alternative PyTorch implementations (https: //github.com/mseitzer/pytorch-fid) can produce different values in some circumstances.</note>
+		</body>
+		<back>
+			<div type="annex">
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>MNIST</head><p>Fashion CIFAR-10 CelebA MM GAN 9.8 ± 0.9 29.6 ± 1.6 72.7 ± 3.6 65.6 ± 4.2 NS GAN 6.8 ± 0.5 26.5 ± 1.6 58.5 ± 1.9 55.0 ± 3. 115.0 ± 1.1 101.7 ± 0.8 80.9 ± 0.4 62.9 ± 0.8 2-Stage VAE (ours) 12.6 ± 1.5 29.3 ± 1.0 72.9 ± 0.9 44.4 ± 0.7</p></div>			</div>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">Wasserstein generative adversarial networks</title>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Arjovsky</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Soumith</forename><surname>Chintala</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Léon</forename><surname>Bottou</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">International Conference on Machine Learning</title>
+				<imprint>
+			<date type="published" when="2017" />
+			<biblScope unit="page" from="214" to="223" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<analytic>
+		<title level="a" type="main">Representation Learning: A Review and New Perspectives</title>
+		<author>
+			<persName><forename type="first">Yoshua</forename><surname>Bengio</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Aaron</forename><surname>Courville</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Pascal</forename><surname>Vincent</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/tpami.2013.50</idno>
+	</analytic>
+	<monogr>
+		<title level="j">IEEE Transactions on Pattern Analysis and Machine Intelligence</title>
+		<title level="j" type="abbrev">IEEE Trans. Pattern Anal. Mach. Intell.</title>
+		<idno type="ISSN">0162-8828</idno>
+		<idno type="ISSNe">2160-9292</idno>
+		<imprint>
+			<biblScope unit="volume">35</biblScope>
+			<biblScope unit="issue">8</biblScope>
+			<biblScope unit="page" from="1798" to="1828" />
+			<date type="published" when="2013-08" />
+			<publisher>Institute of Electrical and Electronics Engineers (IEEE)</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<monogr>
+		<title level="m" type="main">BEGAN: Boundary equilibrium generative adversarial networks</title>
+		<author>
+			<persName><forename type="first">David</forename><surname>Berthelot</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Thomas</forename><surname>Schumm</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Luke</forename><surname>Metz</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1703.10717</idno>
+		<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b3">
+	<monogr>
+		<author>
+			<persName><forename type="first">Olivier</forename><surname>Bousquet</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sylvain</forename><surname>Gelly</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ilya</forename><surname>Tolstikhin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Carl</forename><forename type="middle">Johann</forename><surname>Simon-Gabriel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Bernhard</forename><surname>Schölkopf</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1611.02731</idno>
+		<title level="m">From optimal transport to generative modeling: the VEGAN cookbook</title>
+				<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b4">
+	<analytic>
+		<title level="a" type="main">Context-Aware Content Generation for Virtual Environments</title>
+		<author>
+			<persName><forename type="first">Andrew</forename><surname>Brock</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Theodore</forename><surname>Lim</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">M</forename><surname>Ritchie</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Nick</forename><surname>Weston</surname></persName>
+		</author>
+		<idno type="DOI">10.1115/detc2016-59997</idno>
+		<idno type="arXiv">arXiv:1609.07093</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Volume 1B: 36th Computers and Information in Engineering Conference</title>
+				<imprint>
+			<publisher>American Society of Mechanical Engineers</publisher>
+			<date type="published" when="2016-08-21" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b5">
+	<monogr>
+		<author>
+			<persName><forename type="first">Yuri</forename><surname>Burda</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Roger</forename><surname>Grosse</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ruslan</forename><surname>Salakhutdinov</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1509.00519</idno>
+		<title level="m">Importance weighted autoencoders</title>
+				<imprint>
+			<date type="published" when="2015" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b6">
+	<analytic>
+		<title level="a" type="main">InfoGAN: Interpretable representation learning by information maximizing generative adversarial nets</title>
+		<author>
+			<persName><forename type="first">Xi</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yan</forename><surname>Duan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Rein</forename><surname>Houthooft</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">John</forename><surname>Schulman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ilya</forename><surname>Sutskever</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Pieter</forename><surname>Abbeel</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems</title>
+				<imprint>
+			<date type="published" when="2016" />
+			<biblScope unit="page" from="2172" to="2180" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b7">
+	<monogr>
+		<author>
+			<persName><forename type="first">Xi</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Diederik</forename><surname>Kingma</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tim</forename><surname>Salimans</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yan</forename><surname>Duan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Prafulla</forename><surname>Dhariwal</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">John</forename><surname>Schulman</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1611.02731</idno>
+		<title level="m">Ilya Sutskever, and Pieter Abbeel. Variational lossy autoencoder</title>
+				<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b8">
+	<analytic>
+		<title level="a" type="main">arXiv</title>
+		<author>
+			<persName><forename type="first">Bin</forename><surname>Dai</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">David</forename><surname>Wipf</surname></persName>
+		</author>
+		<idno type="DOI">10.1090/mbk/121/79</idno>
+		<idno type="arXiv">arXiv:1903.05789</idno>
+	</analytic>
+	<monogr>
+		<title level="m">100 Years of Math Milestones</title>
+				<imprint>
+			<publisher>American Mathematical Society</publisher>
+			<date type="published" when="2019-06-12" />
+			<biblScope unit="page" from="433" to="437" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b9">
+	<analytic>
+		<title level="a" type="main">Connections with robust PCA and the role of emergent sparsity in variational autoencoder models</title>
+		<author>
+			<persName><forename type="first">Bin</forename><surname>Dai</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yu</forename><surname>Wang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">John</forename><surname>Aston</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Gang</forename><surname>Hua</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">David</forename><surname>Wipf</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Machine Learning Research</title>
+		<imprint>
+			<biblScope unit="volume">19</biblScope>
+			<biblScope unit="issue">41</biblScope>
+			<biblScope unit="page" from="1" to="42" />
+			<date type="published" when="2018" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b10">
+	<monogr>
+		<author>
+			<persName><forename type="first">Carl</forename><surname>Doersch</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1606.05908</idno>
+		<title level="m">Tutorial on variational autoencoders</title>
+				<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b11">
+	<analytic>
+		<title level="a" type="main">Combining casual and similarity-based reasoning</title>
+		<author>
+			<persName><forename type="first">Alexey</forename><surname>Dosovitskiy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Thomas</forename><surname>Brox</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/7503.003.0090</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 19</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2007" />
+			<biblScope unit="page" from="658" to="666" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b12">
+	<monogr>
+		<title level="m" type="main">Many paths to equilibrium: GANs do not need to decrease a divergence at every step</title>
+		<author>
+			<persName><forename type="first">William</forename><surname>Fedus</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mihaela</forename><surname>Rosca</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Balaji</forename><surname>Lakshminarayanan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Andrew</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shakir</forename><surname>Dai</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Mohamed</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Goodfellow</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1710.08446</idno>
+		<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b13">
+	<analytic>
+		<title level="a" type="main">Generative adversarial networks</title>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Goodfellow</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jean</forename><surname>Pouget-Abadie</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mehdi</forename><surname>Mirza</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Bing</forename><surname>Xu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">David</forename><surname>Warde-Farley</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sherjil</forename><surname>Ozair</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Aaron</forename><surname>Courville</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yoshua</forename><surname>Bengio</surname></persName>
+		</author>
+		<idno type="DOI">10.1145/3422622</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Communications of the ACM</title>
+		<title level="j" type="abbrev">Commun. ACM</title>
+		<idno type="ISSN">0001-0782</idno>
+		<idno type="ISSNe">1557-7317</idno>
+		<imprint>
+			<biblScope unit="volume">63</biblScope>
+			<biblScope unit="issue">11</biblScope>
+			<biblScope unit="page" from="139" to="144" />
+			<date type="published" when="2020-10-22" />
+			<publisher>Association for Computing Machinery (ACM)</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b14">
+	<analytic>
+		<title level="a" type="main">A Kernel Method for the Two-Sample-Problem</title>
+		<author>
+			<persName><forename type="first">Arthur</forename><surname>Gretton</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Karsten</forename><surname>Borgwardt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Malte</forename><surname>Rasch</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Bernhard</forename><surname>Schölkopf</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alex</forename><surname>Smola</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/7503.003.0069</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 19</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2007" />
+			<biblScope unit="page" from="513" to="520" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b15">
+	<analytic>
+		<title level="a" type="main">PAC Generalization Bounds for Co-training</title>
+		<author>
+			<persName><forename type="first">Ishaan</forename><surname>Gulrajani</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Faruk</forename><surname>Ahmed</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Arjovsky</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Vincent</forename><surname>Dumoulin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Aaron</forename><surname>Courville</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/1120.003.0053</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 14</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2002" />
+			<biblScope unit="page" from="5767" to="5777" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b16">
+	<analytic>
+		<title level="a" type="main">Generalization Performance of Some Learning Problems in Hubert Functional Spaces</title>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Heusel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Hubert</forename><surname>Ramsauer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Thomas</forename><surname>Unterthiner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Bernhard</forename><surname>Nessler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sepp</forename><surname>Hochreiter</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/1120.003.0074</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 14</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2002" />
+			<biblScope unit="page" from="6626" to="6637" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b17">
+	<analytic>
+		<title level="a" type="main">Auto-encoding variational Bayes</title>
+		<author>
+			<persName><forename type="first">Diederik</forename><surname>Kingma</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Max</forename><surname>Welling</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">International Conference on Learning Representations</title>
+				<imprint>
+			<date type="published" when="2014" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b18">
+	<analytic>
+		<title level="a" type="main">Unified Inference for Variational Bayesian Linear Gaussian State-Space Models</title>
+		<author>
+			<persName><forename type="first">Diederik</forename><surname>Kingma</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tim</forename><surname>Salimans</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Rafal</forename><surname>Jozefowicz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Xi</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ilya</forename><surname>Sutskever</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Max</forename><surname>Welling</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/7503.003.0015</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 19</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2007" />
+			<biblScope unit="page" from="4743" to="4751" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b19">
+	<monogr>
+		<author>
+			<persName><forename type="first">Naveen</forename><surname>Kodali</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jacob</forename><surname>Abernethy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">James</forename><surname>Hays</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Zsolt</forename><surname>Kira</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1705.07215</idno>
+		<title level="m">On convergence and stability of GANs</title>
+				<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b20">
+	<monogr>
+		<title level="m" type="main">Learning multiple layers of features from tiny images</title>
+		<author>
+			<persName><forename type="first">Alex</forename><surname>Krizhevsky</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Geoffrey</forename><surname>Hinton</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2009" />
+			<publisher>Citeseer</publisher>
+		</imprint>
+	</monogr>
+	<note type="report_type">Technical report</note>
+</biblStruct>
+
+<biblStruct xml:id="b21">
+	<monogr>
+		<title level="m" type="main">Autoencoding beyond pixels using a learned similarity metric</title>
+		<author>
+			<persName><forename type="first">Anders</forename><surname>Boesen Lindbo Larsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Søren</forename><forename type="middle">Kaae</forename><surname>Sønderby</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Hugo</forename><surname>Larochelle</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ole</forename><surname>Winther</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1512.09300</idno>
+		<imprint>
+			<date type="published" when="2015" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b22">
+	<analytic>
+		<title level="a" type="main">Gradient-based learning applied to document recognition</title>
+		<author>
+			<persName><forename type="first">Yann</forename><surname>Lecun</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Léon</forename><surname>Bottou</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yoshua</forename><surname>Bengio</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Patrick</forename><surname>Haffner</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/5.726791</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Proceedings of the IEEE</title>
+		<title level="j" type="abbrev">Proc. IEEE</title>
+		<idno type="ISSN">0018-9219</idno>
+		<imprint>
+			<biblScope unit="volume">86</biblScope>
+			<biblScope unit="issue">11</biblScope>
+			<biblScope unit="page" from="2278" to="2324" />
+			<date type="published" when="1998" />
+			<publisher>Institute of Electrical and Electronics Engineers (IEEE)</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b23">
+	<analytic>
+		<title level="a" type="main">Deep learning face attributes in the wild</title>
+		<author>
+			<persName><forename type="first">Ziwei</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ping</forename><surname>Luo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Xiaogang</forename><surname>Wang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Xiaoou</forename><surname>Tang</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">IEEE International Conference on Computer Vision</title>
+				<imprint>
+			<date type="published" when="2015" />
+			<biblScope unit="page" from="3730" to="3738" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b24">
+	<analytic>
+		<title level="a" type="main">Large-Scale Sparsified Manifold Regularization</title>
+		<author>
+			<persName><forename type="first">Mario</forename><surname>Lucic</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Karol</forename><surname>Kurach</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Marcin</forename><surname>Michalski</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sylvain</forename><surname>Gelly</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Olivier</forename><surname>Bousquet</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/7503.003.0180</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 19</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2007" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b25">
+	<analytic>
+		<title/>
+		<author>
+			<persName><forename type="first">Alireza</forename><surname>Makhzani</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jonathon</forename><surname>Shlens</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Navdeep</forename><surname>Jaitly</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Goodfellow</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Brendan</forename><surname>Frey</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1511.05644</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Adversarial autoencoders</title>
+		<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b26">
+	<analytic>
+		<title level="a" type="main">Least Squares Generative Adversarial Networks</title>
+		<author>
+			<persName><forename type="first">Xudong</forename><surname>Mao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Qing</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Haoran</forename><surname>Xie</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Raymond</forename><forename type="middle">Y K</forename><surname>Lau</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Zhen</forename><surname>Wang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Stephen</forename><forename type="middle">Paul</forename><surname>Smolley</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/iccv.2017.304</idno>
+	</analytic>
+	<monogr>
+		<title level="m">2017 IEEE International Conference on Computer Vision (ICCV)</title>
+				<imprint>
+			<publisher>IEEE</publisher>
+			<date type="published" when="2017-10" />
+			<biblScope unit="page" from="2813" to="2821" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b27">
+	<monogr>
+		<author>
+			<persName><forename type="first">Danilo</forename><surname>Jimenez Rezende</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shakir</forename><surname>Mohamed</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1505.05770</idno>
+		<title level="m">Variational inference with normalizing flows</title>
+				<imprint>
+			<date type="published" when="2015" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b28">
+	<analytic>
+		<title level="a" type="main">Stochastic backpropagation and approximate inference in deep generative models</title>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">J</forename><surname>Rezende</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Mohamed</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Wierstra</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">International Conference on Machine Learning</title>
+				<imprint>
+			<date type="published" when="2014" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b29">
+	<analytic>
+		<title level="a" type="main">Wasserstein autoencoders</title>
+		<author>
+			<persName><forename type="first">Ilya</forename><surname>Tolstikhin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Olivier</forename><surname>Bousquet</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sylvain</forename><surname>Gelly</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Bernhard</forename><surname>Schoelkopf</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">International Conference on Learning Representations</title>
+				<imprint>
+			<date type="published" when="2018" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b30">
+	<monogr>
+		<title level="m" type="main">Fashion-MNIST: A novel image dataset for benchmarking machine learning algorithms</title>
+		<author>
+			<persName><forename type="first">Han</forename><surname>Xiao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Kashif</forename><surname>Rasul</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Roland</forename><surname>Vollgraf</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1708.07747</idno>
+		<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>

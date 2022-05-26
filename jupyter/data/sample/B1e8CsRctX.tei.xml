@@ -1,0 +1,829 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">Under review as a conference paper at ICLR 2019 GENERATIVE ENSEMBLES FOR ROBUST ANOMALY DETECTION</title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<title level="a" type="main">Under review as a conference paper at ICLR 2019 GENERATIVE ENSEMBLES FOR ROBUST ANOMALY DETECTION</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date/>
+						</imprint>
+					</monogr>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.6.2" ident="GROBID" when="2022-03-08T15:29+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>Deep generative models are capable of learning probability distributions over large, high-dimensional datasets such as images, video and natural language. Generative models trained on samples from p(x) ought to assign low likelihoods to out-of-distribution (OoD) samples from q(x), making them suitable for anomaly detection applications. We show that in practice, likelihood models are themselves susceptible to OoD errors, and even assign large likelihoods to images from other natural datasets. To mitigate these issues, we propose Generative Ensembles, a model-independent technique for OoD detection that combines density-based anomaly detection with uncertainty estimation. Our method outperforms the Outof-DIstribution detector for Neural networks (ODIN) and Variational Information Bottleneck (VIB) baselines on image datasets, and achieves comparable performance to a classification model on the Kaggle Credit Fraud dataset.</p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1">INTRODUCTION</head><p>Knowing when a machine learning (ML) model is qualified to make predictions on an input is critical to safe deployment of ML technology in the real world. When training and test distributions differ, neural networks may provide -with high confidence -arbitrary predictions on inputs that they are unaccustomed to seeing. To mitigate these Out-of-Distribution (OoD) errors, we require methods to determine whether a given input is sampled from a different stochastic generator than the one used to train the model.</p><p>OoD detection techniques have broad applications beyond safe deployment of ML technology. As datasets for ML grow ever larger and trend towards automated data collection, we require scalable methods for identifying outliers and quantifying noise before we can attempt to train models on that data. Identifying anomalies in data is a crucial feature of many data-driven applications, such as credit fraud detection and monitoring patient data in medical settings.</p><p>Generative modeling algorithms have improved dramatically in recent years, and are capable of learning probabilistic models over large, high-dimensional datasets such as images, video, and natural language <ref type="bibr" target="#b25">(Vaswani et al., 2017;</ref><ref type="bibr" target="#b26">Wang et al., 2018)</ref>. A generative model p θ (x), parameterized by random variable θ and trained to approximate data distribution p(x), ought to assign low likelihoods to samples from any distribution q(x) that differs from p(x). Density estimation does not presuppose a specific "alternate" distribution at training time, making it an attractive alternative to classification-based anomaly detection methods.</p><p>In this work, we apply several classes of generative models to OoD detection problems and demonstrate a significant shortcoming to high-dimensional density estimation models: the anomaly detection model itself may be mispecified. Explicit likelihood models can, in practice, realize high likelihoods to adversarial examples, random noise, and even other natural image datasets. We also illustrate how GAN discriminators presuppose a particular OoD distribution, which makes them particularly fragile at OoD classification. We propose Generative Ensembles, which combine density estimation with uncertainty estimation to detect OoD in a robust manner. Generative Ensembles are model-independent and are trained independently of the task-specific ML model of interest. Our method outperforms task-specific OoD baselines on the majority of evaluated OoD tasks and demonstrate competitive results with discriminative classification approaches on the Kaggle Credit Fraud dataset.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2">GENERATIVE ENSEMBLES</head><p>We consider several classes of generative modeling techniques in our experiments. Autoregressive Models and Normalizing Flows (NF) are fully-observed likelihood models that construct a tractable log-likelihood approximation to the data-generating density p(x) <ref type="bibr" target="#b24">(Uria et al., 2016;</ref><ref type="bibr" target="#b5">Dinh et al., 2014;</ref><ref type="bibr" target="#b20">Rezende &amp; Mohamed, 2015)</ref>. Variational Autoencoders (VAE) are latent variable models that maximize a variational lower bound on log density <ref type="bibr" target="#b13">(Kingma &amp; Welling, 2013;</ref><ref type="bibr" target="#b21">Rezende et al., 2014)</ref>. Finally, Generative Adversarial Networks (GAN) are implicit density models that minimize a divergence metric between p(x) and generative distribution q θ (x) <ref type="bibr" target="#b7">(Goodfellow et al., 2014)</ref>. We refer to a GAN's generative distribution as q θ (x) (in lieu of p θ (x)) because from the GAN discriminator's point of view, the outputs of the generator are OoD and depend on θ.</p><p>Although log p(x) and its lower bounds are proper scoring methods <ref type="bibr" target="#b15">(Lakshminarayanan et al., 2017)</ref>, we approximate them in practice with continuous-valued neural network function approximators log p θ (x). Neural networks have non-smooth predictive distributions, which makes them susceptible to malformed inputs that exploit idiosyncratic computation within the model <ref type="bibr" target="#b23">(Szegedy et al., 2013)</ref>.</p><p>Likelihood function approximators are no exception. When judging natural images, we assume an OoD input x ∼ q(x) should remain OoD within some L P -norm, and yet a Fast Gradient Sign Method (FGSM) attack <ref type="bibr" target="#b8">(Goodfellow et al., 2015)</ref> on the predictive distribution can realize extremely high likelihood predictions <ref type="bibr" target="#b18">(Nguyen et al., 2015)</ref>. Conversely, a FGSM attack in the reverse direction on an in-distribution sample x ∼ p(x) creates a perceptually identical input with low likelihood predictions <ref type="bibr" target="#b14">(Kos et al., 2018)</ref>. To make matters worse, we show in Figure <ref type="figure" target="#fig_0">1</ref> that likelihood models can be fooled by OoD samples that are not even adversarial by construction, such as SVHN test images on a likelihood model trained on CIFAR-10. Concurrent work by <ref type="bibr" target="#b17">Nalisnick et al. (2018)</ref> also show this phenomena and present additional analyses on why generative models systematically assign higher likelihoods to SVHN.  <ref type="bibr" target="#b12">(Kingma &amp; Dhariwal, 2018</ref>) trained on CIFAR-10 assigns much higher likelihoods to samples from SVHN than samples from CIFAR-10. Right: We use ensembles of generative models to implement the Watanabe-Akaike Information Criterion (WAIC), which combines density estimation with uncertainty estimation. Histograms correspond to predictions over test sets from each dataset.</p><p>Generative Ensembles detect OoD examples by combining a density evaluation model with predictive uncertainty estimation on the density model via ensemble variance. Following the results of <ref type="bibr" target="#b15">Lakshminarayanan et al. (2017)</ref>, we elect to use independently trained ensembles instead of a Bayesian Dropout approximation <ref type="bibr" target="#b6">(Gal &amp; Ghahramani, 2016)</ref>. For generative models that admit exact likelihoods (or variational approximations), the ensemble can be used to implement the Watanabe-Akaike Information Criterion (WAIC), which consists of a density estimation score with a Bayesian correction term for model bias <ref type="bibr" target="#b27">(Watanabe, 2010)</ref>:</p><formula xml:id="formula_0">WAIC(x) = E θ [log p θ (x)] − Var θ [log p θ (x)]</formula><p>(1)</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.1">OOD DETECTION WITH GAN DISCRIMINATORS</head><p>We describe how to construct Generative Ensembles based on implicit density models such as GANs, and highlight the importance of OoD detection approaches that do not presuppose a specific OoD distribution. A discriminative model tasked with classifying between p(x) and q(x) is fragile to inputs that lie in neither distribution. Figure <ref type="figure" target="#fig_1">2b</ref> illustrates a simple 2D density modeling task where individual GAN discriminators -when trained to convergence -learn a discriminative boundary that does not adequately capture p(x).</p><p>However, unlike discriminative anomaly classifiers on a static datasets, which model p(x)/q(x), the likelihood ratio p(x)/q θ (x) implicitly assumed by a GAN discriminator is uniquely randomized by GAN training dynamics on θ. By training an ensemble of GANs we can estimate the posterior distribution over model decision boundaries p(x)/q θ (x), or equivalently, the posterior distribution over alternate distributions q θ (x). In other words, we can use uncertainty estimation on randomly sampled discriminators to de-correlate the OoD classification errors made by a single discriminator (Figure <ref type="figure" target="#fig_1">2c</ref>). </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3">RELATED WORK</head><p>We can categorize existing OoD detection techniques in Table <ref type="table" target="#tab_0">1</ref> using two criteria: (1) Does it assume a specific anomaly distribution? (2) Is the technique specific to the model, or does it only depend on the inputs to the model?</p><p>A common approach to OoD detection (a.k.a. anomaly detection) is to label a dataset of anomalous data and train a binary classifier on that label. Alternatively, a classification task model may be augmented with a "None of the above" class. The classifier then learns a decision boundary (likelihood ratio) between p(x) and q(x). However, the discriminative approach to anomaly detection requires the anomaly distribution to be specified at training time; this is a severe flaw when anomalous data is rare (e.g. medical seizures) or non-stationary (e.g. generated by an adversary).</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.1">UNCERTAINTY ESTIMATION</head><p>OoD detection is closely related to the problem of uncertainty estimation, whose goal is to yield calibrated confidence measures for a model's predictive distribution p θ (y|x). Well-calibrated uncertainty estimation integrates several forms of uncertainty into p θ (y|x): model mispecification un-  <ref type="bibr" target="#b1">Alemi et al. (2018b)</ref> certainty (OoD detection of invalid inputs), aleatoric uncertainty (irreducible input noise for valid inputs), and epistemic uncertainty (unknown model parameters for valid inputs). In this paper, we study OoD detection in isolation; instead of considering whether p θ (y|x) should be trusted for a given x, we are trying to determine whether x should be fed into p θ (y|x) at all.</p><p>Predictive uncertainty estimation is a model-dependent OoD technique because it depends on taskspecific information (such as labels and task model architecture) in order to yield an integrated estimate of uncertainty. ODIN <ref type="bibr" target="#b16">(Liang et al., 2017)</ref>, MC Dropout <ref type="bibr" target="#b6">(Gal &amp; Ghahramani, 2016)</ref> and DeepEnsemble <ref type="bibr" target="#b15">(Lakshminarayanan et al., 2017</ref>) model a calibrated predictive distribution for a classification task. Variational information bottleneck (VIB) <ref type="bibr" target="#b1">(Alemi et al., 2018b)</ref> performs divergence estimation in latent space to detect OoD, but is technically a model-dependent technique because the latent code is trained jointly with the downstream classification task.</p><p>One limitation of model-dependent OoD techniques is that they may discard information about p(x) in learning the task-specific loss function p θ (y|x). Consider a contrived binary classification model on images that learns to solve the task perfectly by discarding all information except the contents of the first pixel (no other information is preserved in the features). Subsequently, the model yields confident predictions on any distribution that happens to preserve identical first-pixel statistics. In contrast, density estimation in data space x considers the structure of the entire input manifold, without bias towards a particular downstream task or task-specific compression.</p><p>In our work we estimate predictive uncertainty of the scoring model itself. Unlike predictive uncertainty methods applied to the task model's predictions, Generative Ensembles do not require task-specific labels to train. Furthermore, model-independent OoD detection aids interpretation of predictive uncertainty by isolating the uncertainty component arising from OoD inputs.  make the observation that adversarial examples designed to fool a downstream task have low likelihood under an independent generative model. They propose a "data purification" pipeline where inputs are first modified via gradient ascent on model likelihood, before passing it to the unmodified classifier. Their evaluations are restricted to L p -norm attacks on in-distribution inputs to the task model, and do not take into account that the generative model itself may be susceptible to OoD errors. In fact, a preprocessing step with gradient ascent on model likelihood has the exact opposite of the desired effect when the input is OoD to begin with.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.2">ADVERSARIAL DEFENSE</head><p>Our work considers adversarial defense in a broader OoD context. Although adversarial attacks literature typically considers small L p -norm modifications to input (demonstrating the alarming sensitivity of neural networks), there is no such restriction in practice to the degree with which an input can be perturbed in a test setting. Adversarial defense is nothing more than making ML models robust to OoD inputs; whether they come from an attacker or not is irrelevant. We evaluate our methods on simple OoD transformations (flipping images), common ML datasets, and the adversaraial setting where a worst-case input is created from a single model in the ensemble. <ref type="bibr" target="#b9">He et al. (2017)</ref> demonstrate that ensembling adversarial defenses does not completely mitigate local sensitivity of neural networks. It is certainly plausible that sufficient search over a Generative Ensemble's predictions can find OoD inputs with both low variance and high likelihood. The focus of our work is to measure the extent to which uncertainty estimation improves robustness to model mispecification error, not to present a provably secure system. Having said that, model-independent OoD detection is easy to obfuscate in a practical ML security setting since the user only has access to the task model. Furthermore, a Generative Ensemble's WAIC estimate can be made more robust by sampling additional models from the posterior over model parameters.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4">EXPERIMENTAL RESULTS</head><p>Following the experiments proposed by <ref type="bibr" target="#b16">Liang et al. (2017)</ref> and <ref type="bibr" target="#b1">Alemi et al. (2018b)</ref>, we train OoD models on MNIST, Fashion MNIST, CIFAR-10 datasets, and evaluate anomaly detection on test samples from other datasets. In line with the aforementioned works, we measure anomaly detection capability based on AUROC over several quantities shown in Table <ref type="table">2</ref>. Our proposed quantities include single Wasserstein GAN (WGAN) discriminators <ref type="bibr" target="#b2">(Arjovsky et al., 2017)</ref> with fine-tuning (D), ensemble variance of discriminators (Var(D)), likelihood models (log p θ (x)), and WAIC estimated using an ensemble of likelihood models. We follow the protocol as suggested by <ref type="bibr" target="#b15">Lakshminarayanan et al. (2017)</ref> to use 5 independent models with different parameter initializations, trained on the full training set (no bootstrap). For likelihood estimators based on variational autoencoders (VAE), we also evaluate the rate term D KL (q θ (z|x) p(z)), which corresponds to information loss between the latent inference distribution and prior.</p><p>For MNIST and Fashion MNIST datasets, we use a VAE to predict a 16-sample Importance Weighted AutoEncoder (IWAE) bound. We extend the VAE example code 1 from Tensorflow Probability <ref type="bibr" target="#b4">(Dillon et al., 2017)</ref> to use a Masked Autoregressive Flow prior <ref type="bibr" target="#b19">(Papamakarios et al., 2017)</ref>, and train the model for 5k steps. Additional architectural details are found in Appendix B.</p><p>Our WGAN model's generator and discriminator share the same architecture with the VAE decoder and encoder, respectively. The discriminator has an additional linear projection layer to its prediction of the Wasserstein metric. To ensure D represents a meaningful discriminative boundary between the two distributions, we freeze the generator and fine-tune the discriminator for an additional 4k steps on stationary p(x) and q θ (x). We also include Gaussian noise adversarially perturbed by FGSM on a single model (Adversarial).</p><p>For CIFAR-10 WGAN experiments, we change the first filter size in the discriminator from 7 to 8. For log-likelihood estimation, we train a vanilla GLOW model <ref type="bibr" target="#b12">(Kingma &amp; Dhariwal, 2018)</ref> for 250k steps, as we require a more powerful generative model to obtain good results.</p><p>The baseline methods are model-dependent and learn from the joint distribution of images and labels, while our methods use only images. For the VIB baseline, we use the rate term as the threshold variable. The experiments in <ref type="bibr" target="#b1">Alemi et al. (2018b)</ref> make use of (28, 28, 5) "location-aware" features concatenated to the model inputs, to assist in distinguishing spatial inhomogeneities in the data. In this work we train vanilla generative models with no special modifications, so for fair comparison we also train VIB without location-aware features. For CIFAR-10 experiments, we train VIB for 26 epochs and converge at 75.7% classification accuracy on the test set. All other experimental parameters for VIB are identical to those in <ref type="bibr" target="#b1">Alemi et al. (2018b)</ref>.</p><p>Despite being trained on strictly less data (no labels), our methods -in particular Generative Ensembles -outperform ODIN and VIB on most OoD tasks. The VAE rate term appears to be quite effective, outperforming likelihood and WAIC estimation in data space. It is robust to adversarial inputs on the same model, because the FGSM perturbation primarily minimizes the (larger) distortion component of the approximate likelihood. The performance of VAE rate versus VIB rate also suggests that latent codes learned from generative objectives are more useful for OoD detection that latent codes learned via a classification-specific objective.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.1">FAILURE ANALYSIS</head><p>In this section we discuss the experiments in which Generative Ensembles performed poorly, and suggest simple fixes to address these issues.</p><p>Table <ref type="table">2</ref>: We train models on MNIST, Fashion MNIST, and CIFAR-10 and compare OoD classification ability to baseline methods using the threshold-independent Area Under ROC curve metric (AUROC). D corresponds to single WGAN discriminators with 4k fine-tuning steps on stationary p(x), q(x). Var(D) is uncertainty estimated by an ensemble of discriminators. Rate is the D KL term in the VAE objective. log p θ (x) is a single likelihood model (VAE, GLOW). WAIC is the Watanabe-Akaike Information Criterion as estimated by the Generative Ensemble. ODIN results reproduced from <ref type="bibr" target="#b16">Liang et al. (2017)</ref>. Best results for each task shown in bold. In an earlier draft of this work, a VAE trained on Fashion MNIST performed poorly on all OoD datasets when using log p θ (x) and WAIC metrics. This was surprising, since the same metrics performed well when the same VAE architecture was trained on MNIST. To explain this phenomenon, we show in Figure <ref type="figure">3</ref> inputs and VAE-decoded outputs from Fashion MNIST and MNIST test sets. Fashion MNIST images are reconstructed properly, while MNIST images are are barely recognizable after decoding.</p><p>A VAEs training objective can be interpreted as the sum of a pixel-wise autoencoding loss (distortion) and a "semantic" loss (rate). Even though Fashion MNIST appears to be better reconstructed in a semantic sense, the distortion values between the FMNIST and MNIST test datasets are numerically quite similar, as shown in Figure <ref type="figure">3</ref>. Distortion terms make up the bulk of the IWAE predictions in our models, thus explaining why log p θ (x) was not very discriminative when classifying OoD MNIST examples. <ref type="bibr" target="#b11">Higgins et al. (2016)</ref> propose β-VAE, a simple modification to the standard VAE objective: p(x|z) + β • D KL (q θ (z|x) p(z)). β controls the relative balance between rate and distortion terms during training. Setting β &lt; 1 is a commonly prescribed fix for encouraging VAEs to approach the "autoencoding limit" and avoid posterior collapse <ref type="bibr" target="#b0">(Alemi et al., 2018a)</ref>. At test time, this results in higher-fidelity autoencoding at the expense of higher rates, which seems to be a more useful signal for identifying outliers than the total pixel distortion (also suggested by Table <ref type="table">2</ref>, column 7).</p><p>Re-training the ensemble with β = .1 encourages a higher distortion penalty during training, and thereby fixes the OoD detection model. Figure <ref type="figure">3</ref>: Top: Inputs and decoded outputs from a VAE trained on Fashion MNIST(β = 1) for Fashion MNIST (left) and MNIST (right). Although Fashion MNIST inputs appear to be better reconstructed (suggesting higher likelihoods), they have comparable distortions to MNIST. The bottom row shows that Fashion MNIST and MNIST test samples have comparable rate-distortion scatter plots and IWAE histograms.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.2">CREDIT CARD ANOMALY DETECTION</head><p>We consider the problem of detecting fraudulent credit card transactions from the Kaggle Credit Fraud Challenge <ref type="bibr" target="#b3">(Dal Pozzolo et al., 2015)</ref>. A conventional approach to fraud detection is to include a small fraction of fraudulent transactions in the training set, and then learn a discriminative classifier. Instead, we treat fraud detection as an anomaly detection problem where a generative model only sees normal credit card transactions at training time. This is motivated by realistic test scenarios, where an adversary is hardly restricted to generating data identically distributed to the training set.</p><p>We compare single likelihood models (16-sample IWAE) and Generative Ensembles (ensemble variance of IWAE) to a binary classifier baseline that has access to a training set of fraudulent transactions in Table <ref type="table" target="#tab_2">3</ref>. The classifier baseline is a fully-connected network with 2 hidden ReLU layers of 512 units, and is trained using a weighted sigmoid cross entropy loss (positive weight=580) with Dropout and RMSProp (α = 1e−5). The VAE encoder and decoder are fully connected networks with single hidden layers (32 and 30 units, respectively) and trained using Adam (α = 1e−3). Unsurprisingly, the classifier baseline performs best because fraudulent test samples are distributed identically to fraudulent training samples. Even so, the single-model density estimation and Generative Ensemble achieve reasonable results. </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5">DISCUSSION AND FUTURE WORK</head><p>OoD detection is a critical piece of infrastructure for ML applications where the test data distribution is not known at training time. We present Generative Ensembles, a simple yet powerful technique for model-independent OoD detection that improves density models with uncertainty estimation.</p><p>An important future direction of research is that of scalability: learning good generative models of semantically rich, high-dimensional inputs (e.g. video) is an active research area in its own right. An open question is whether an ensemble of weak generative models (where each model may not necessarily generate high-quality samples) can still yield density and uncertainty predictions useful enough for OoD detection. Preliminary evidence on CIFAR-10 are promising; although the ensemble average on the test set is ∼ 3.5 bits/dim and samples from the prior do not resemble any recognizable objects, the ensemble still performs well at OoD detection. In future work we will explore other methods of de-correlating samples from the posterior over model parameters, as well as combining independent scores (D, Rate, log θ p(x), WAIC) into a more powerful OoD model.</p></div><figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_0"><head>Figure 1 :</head><label>1</label><figDesc>Figure1: Left: density estimation models are not robust to OoD inputs. A GLOW model<ref type="bibr" target="#b12">(Kingma &amp; Dhariwal, 2018</ref>) trained on CIFAR-10 assigns much higher likelihoods to samples from SVHN than samples from CIFAR-10. Right: We use ensembles of generative models to implement the Watanabe-Akaike Information Criterion (WAIC), which combines density estimation with uncertainty estimation. Histograms correspond to predictions over test sets from each dataset.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_1"><head>Figure 2 :</head><label>2</label><figDesc>Figure 2: In this toy example, we learn generative models for a 2D multivariate normal with identity covariance centered at (5, 5). (a) Explicit density models such as Normalizing Flows concentrate probability mass at the data distribution (b) Four independently trained GANs learn random discriminative boundaries, each corresponding to a different implied generator distribution. To ensure that the GAN discriminators form a clear discriminative boundary between p(x) and q θ (x), we train the discriminators an additional 10k steps to convergence. Each of these boundaries fails to enclose the true data distribution. (c) Predictive uncertainty over an ensemble of discriminators "fences in" the shared, low-variance region corresponding to p(x).</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_0"><head>Table 1 :</head><label>1</label><figDesc>Categorization of several OoD detection techniques, based on whether they depend on a specific model/task, and whether they assume a specific anomaly distribution.</figDesc><table><row><cell></cell><cell>Model-Dependent</cell><cell>Model-Independent</cell></row><row><cell>OoD</cell><cell>Auxiliary "Other" class</cell><cell>Binary classification (likelihood ratio)</cell></row><row><cell>Dependent</cell><cell></cell><cell>Adversarial Training</cell></row><row><cell>OoD</cell><cell>Hendrycks &amp; Gimpel (2016)</cell><cell>Density Estimation</cell></row><row><cell>Independent</cell><cell>Gal &amp; Ghahramani (2016)</cell><cell>Generative Ensembles (ours)</cell></row><row><cell></cell><cell>Liang et al. (2017)</cell><cell></cell></row><row><cell></cell><cell>Lakshminarayanan et al. (2017)</cell><cell></cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_2"><head>Table 3 :</head><label>3</label><figDesc>Comparison of density-based anomaly detection approaches to a classification baseline on the Kaggle Credit Card Fraud Dataset. The test set consists of 492 fraudulent transactions and 492 normal transactions. Threshold-independent metrics include False Positives at 95% True Positives (FPR@95%TPR), Area Under ROC (AUROC), and Average Precision (AP). Density-based models (Single IWAE, WAIC) are trained only on normal credit card transactions, while the classifier is trained on normal and fraudulent transactions. Arrows denote the direction of better scores.</figDesc><table><row><cell>Method</cell><cell cols="3">FPR@95%TPR ↓ AUROC ↑ AP ↑</cell></row><row><cell>Classifier</cell><cell>4.0</cell><cell>99.1</cell><cell>99.3</cell></row><row><cell cols="2">Single IWAE 15.7</cell><cell>94.6</cell><cell>92.0</cell></row><row><cell>WAIC</cell><cell>15.2</cell><cell>94.7</cell><cell>92.1</cell></row></table></figure>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="1">https://github.com/tensorflow/probability/blob/master/tensorflow_ probability/examples/vae.py</note>
+		</body>
+		<back>
+			<div type="annex">
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>A TERMINOLOGY AND ABBREVIATIONS p(x)</head><p>Training data distribution q(x)</p><p>OoD data distribution p θ (x)</p><p>Learned approximation of true distribution with parameters θ. May be implicitly specified, i.e. a fully-observed density model q θ (x)</p><p>Learned approximation of OoD distribution with parameters θ. May be implicitly specified, i.e. via a GAN discriminator that learns p(x)/q θ (x)  Models are trained with Adam (α = 1e−3) with cosine decay on learning rate.</p></div>			</div>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">Fixing a broken elbo</title>
+		<author>
+			<persName><forename type="first">Alexander</forename><surname>Alemi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ben</forename><surname>Poole</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Fischer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joshua</forename><surname>Dillon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Rif</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Kevin</forename><surname>Saurous</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Murphy</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">International Conference on Machine Learning</title>
+				<imprint>
+			<date type="published" when="2018" />
+			<biblScope unit="page" from="159" to="168" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<analytic>
+		<title level="a" type="main">Preprint repository arXiv achieves milestone million uploads</title>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Alexander A Alemi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joshua</forename><forename type="middle">V</forename><surname>Fischer</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Dillon</surname></persName>
+		</author>
+		<idno type="DOI">10.1063/pt.5.028530</idno>
+		<idno type="arXiv">arXiv:1807.00906</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Physics Today</title>
+		<title level="j" type="abbrev">Phys. Today</title>
+		<idno type="ISSNe">1945-0699</idno>
+		<imprint>
+			<date type="published" when="2014" />
+			<publisher>AIP Publishing</publisher>
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<analytic>
+		<title level="a" type="main">Preprint repository arXiv achieves milestone million uploads</title>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Arjovsky</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Soumith</forename><surname>Chintala</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Léon</forename><surname>Bottou</surname></persName>
+		</author>
+		<idno type="DOI">10.1063/pt.5.028530</idno>
+		<idno type="arXiv">arXiv:1701.07875</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Physics Today</title>
+		<title level="j" type="abbrev">Phys. Today</title>
+		<idno type="ISSNe">1945-0699</idno>
+		<imprint>
+			<date type="published" when="2014" />
+			<publisher>AIP Publishing</publisher>
+		</imprint>
+	</monogr>
+	<note type="report_type">Wasserstein gan. arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b3">
+	<analytic>
+		<title level="a" type="main">Calibrating probability with undersampling for unbalanced classification</title>
+		<author>
+			<persName><forename type="first">Andrea</forename><surname>Dal Pozzolo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Olivier</forename><surname>Caelen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Reid</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Gianluca</forename><surname>Johnson</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Bontempi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Computational Intelligence, 2015 IEEE Symposium Series on</title>
+				<imprint>
+			<publisher>IEEE</publisher>
+			<date type="published" when="2015" />
+			<biblScope unit="page" from="159" to="166" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b4">
+	<monogr>
+		<title/>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Joshua V Dillon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dustin</forename><surname>Langmore</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Eugene</forename><surname>Tran</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Srinivas</forename><surname>Brevdo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dave</forename><surname>Vasudevan</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Moore</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1711.10604</idno>
+		<imprint>
+			<date type="published" when="2017" />
+			<pubPlace>Brian Patton, Alex Alemi, Matt Hoffman, and Rif A Saurous</pubPlace>
+		</imprint>
+	</monogr>
+	<note type="report_type">Tensorflow distributions. arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b5">
+	<analytic>
+		<title level="a" type="main">Preprint repository arXiv achieves milestone million uploads</title>
+		<author>
+			<persName><forename type="first">Laurent</forename><surname>Dinh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">David</forename><surname>Krueger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yoshua</forename><surname>Bengio</surname></persName>
+		</author>
+		<idno type="DOI">10.1063/pt.5.028530</idno>
+		<idno type="arXiv">arXiv:1410.8516</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Physics Today</title>
+		<title level="j" type="abbrev">Phys. Today</title>
+		<idno type="ISSNe">1945-0699</idno>
+		<imprint>
+			<date type="published" when="2014" />
+			<publisher>AIP Publishing</publisher>
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b6">
+	<analytic>
+		<title level="a" type="main">Dropout as a bayesian approximation: Representing model uncertainty in deep learning</title>
+		<author>
+			<persName><forename type="first">Yarin</forename><surname>Gal</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Zoubin</forename><surname>Ghahramani</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">international conference on machine learning</title>
+				<imprint>
+			<date type="published" when="2016" />
+			<biblScope unit="page" from="1050" to="1059" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b7">
+	<analytic>
+		<title level="a" type="main">Generative adversarial networks</title>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Goodfellow</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jean</forename><surname>Pouget-Abadie</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mehdi</forename><surname>Mirza</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Bing</forename><surname>Xu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">David</forename><surname>Warde-Farley</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sherjil</forename><surname>Ozair</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Aaron</forename><surname>Courville</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yoshua</forename><surname>Bengio</surname></persName>
+		</author>
+		<idno type="DOI">10.1145/3422622</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Communications of the ACM</title>
+		<title level="j" type="abbrev">Commun. ACM</title>
+		<idno type="ISSN">0001-0782</idno>
+		<idno type="ISSNe">1557-7317</idno>
+		<imprint>
+			<biblScope unit="volume">63</biblScope>
+			<biblScope unit="issue">11</biblScope>
+			<biblScope unit="page" from="139" to="144" />
+			<date type="published" when="2020-10-22" />
+			<publisher>Association for Computing Machinery (ACM)</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b8">
+	<monogr>
+		<title level="m" type="main">Explaining and harnessing adversarial examples</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Ian</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jonathon</forename><surname>Goodfellow</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Christian</forename><surname>Shlens</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Szegedy</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2015" />
+			<publisher>ICLR</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b9">
+	<monogr>
+		<title level="m" type="main">Adversarial example defenses: Ensembles of weak defenses are not strong</title>
+		<author>
+			<persName><forename type="first">Warren</forename><surname>He</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">James</forename><surname>Wei</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Xinyun</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Nicholas</forename><surname>Carlini</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dawn</forename><surname>Song</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1706.04701</idno>
+		<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b10">
+	<analytic>
+		<title level="a" type="main">Preprint repository arXiv achieves milestone million uploads</title>
+		<author>
+			<persName><forename type="first">Dan</forename><surname>Hendrycks</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Kevin</forename><surname>Gimpel</surname></persName>
+		</author>
+		<idno type="DOI">10.1063/pt.5.028530</idno>
+		<idno type="arXiv">arXiv:1610.02136</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Physics Today</title>
+		<title level="j" type="abbrev">Phys. Today</title>
+		<idno type="ISSNe">1945-0699</idno>
+		<imprint>
+			<date type="published" when="2014" />
+			<publisher>AIP Publishing</publisher>
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b11">
+	<monogr>
+		<title level="m" type="main">Shakir Mohamed, and Alexander Lerchner. beta-vae: Learning basic visual concepts with a constrained variational framework</title>
+		<author>
+			<persName><forename type="first">Irina</forename><surname>Higgins</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Loic</forename><surname>Matthey</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Arka</forename><surname>Pal</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Christopher</forename><surname>Burgess</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Xavier</forename><surname>Glorot</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matthew</forename><surname>Botvinick</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b12">
+	<analytic>
+		<title level="a" type="main">Preprint repository arXiv achieves milestone million uploads</title>
+		<author>
+			<persName><forename type="first">P</forename><surname>Diederik</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Prafulla</forename><surname>Kingma</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Dhariwal</surname></persName>
+		</author>
+		<idno type="DOI">10.1063/pt.5.028530</idno>
+		<idno type="arXiv">arXiv:1807.03039</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Physics Today</title>
+		<title level="j" type="abbrev">Phys. Today</title>
+		<idno type="ISSNe">1945-0699</idno>
+		<imprint>
+			<date type="published" when="2014" />
+			<publisher>AIP Publishing</publisher>
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b13">
+	<analytic>
+		<title level="a" type="main">Preprint repository arXiv achieves milestone million uploads</title>
+		<author>
+			<persName><forename type="first">P</forename><surname>Diederik</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Max</forename><surname>Kingma</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Welling</surname></persName>
+		</author>
+		<idno type="DOI">10.1063/pt.5.028530</idno>
+		<idno type="arXiv">arXiv:1312.6114</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Physics Today</title>
+		<title level="j" type="abbrev">Phys. Today</title>
+		<idno type="ISSNe">1945-0699</idno>
+		<imprint>
+			<date type="published" when="2014" />
+			<publisher>AIP Publishing</publisher>
+		</imprint>
+	</monogr>
+	<note type="report_type">Auto-encoding variational bayes. arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b14">
+	<analytic>
+		<title level="a" type="main">Adversarial Examples for Generative Models</title>
+		<author>
+			<persName><forename type="first">Jernej</forename><surname>Kos</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Fischer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dawn</forename><surname>Song</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/spw.2018.00014</idno>
+	</analytic>
+	<monogr>
+		<title level="m">2018 IEEE Security and Privacy Workshops (SPW)</title>
+				<imprint>
+			<publisher>IEEE</publisher>
+			<date type="published" when="2018-05" />
+			<biblScope unit="page" from="36" to="42" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b15">
+	<analytic>
+		<title level="a" type="main">Fast Parameter Estimation Using Green&apos;s Functions</title>
+		<author>
+			<persName><forename type="first">Balaji</forename><surname>Lakshminarayanan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alexander</forename><surname>Pritzel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Charles</forename><surname>Blundell</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/1120.003.0073</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 14</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2002" />
+			<biblScope unit="page" from="6402" to="6413" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b16">
+	<analytic>
+		<title level="a" type="main">Large-scale image classification using fast SVM with deep quasi-linear kernel</title>
+		<author>
+			<persName><forename type="first">Peifeng</forename><surname>Liang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Weite</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Donghang</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jinglu</forename><surname>Hu</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/ijcnn.2017.7965970</idno>
+		<idno type="arXiv">arXiv:1706.02690</idno>
+	</analytic>
+	<monogr>
+		<title level="m">2017 International Joint Conference on Neural Networks (IJCNN)</title>
+				<imprint>
+			<publisher>IEEE</publisher>
+			<date type="published" when="2017-05" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b17">
+	<monogr>
+		<title level="m" type="main">Do deep generative models know what they don</title>
+		<author>
+			<persName><forename type="first">Eric</forename><surname>Nalisnick</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Akihiro</forename><surname>Matsukawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yee</forename><forename type="middle">Whye</forename><surname>Teh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dilan</forename><surname>Gorur</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Balaji</forename><surname>Lakshminarayanan</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1810.09136</idno>
+		<imprint>
+			<date type="published" when="2018" />
+		</imprint>
+	</monogr>
+	<note type="report_type">t know? arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b18">
+	<analytic>
+		<title level="a" type="main">Deep neural networks are easily fooled: High confidence predictions for unrecognizable images</title>
+		<author>
+			<persName><forename type="first">Anh</forename><surname>Nguyen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jason</forename><surname>Yosinski</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jeff</forename><surname>Clune</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/cvpr.2015.7298640</idno>
+	</analytic>
+	<monogr>
+		<title level="m">2015 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)</title>
+				<imprint>
+			<publisher>IEEE</publisher>
+			<date type="published" when="2015-06" />
+			<biblScope unit="page" from="427" to="436" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b19">
+	<analytic>
+		<title level="a" type="main">Speakers optimize information density through syntactic reduction</title>
+		<author>
+			<persName><forename type="first">George</forename><surname>Papamakarios</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Iain</forename><surname>Murray</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Theo</forename><surname>Pavlakou</surname></persName>
+		</author>
+		<idno type="DOI">10.7551/mitpress/7503.003.0111</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems 19</title>
+				<imprint>
+			<publisher>The MIT Press</publisher>
+			<date type="published" when="2007" />
+			<biblScope unit="page" from="2338" to="2347" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b20">
+	<analytic>
+		<title level="a" type="main">Preprint repository arXiv achieves milestone million uploads</title>
+		<author>
+			<persName><forename type="first">Danilo</forename><surname>Jimenez Rezende</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shakir</forename><surname>Mohamed</surname></persName>
+		</author>
+		<idno type="DOI">10.1063/pt.5.028530</idno>
+		<idno type="arXiv">arXiv:1505.05770</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Physics Today</title>
+		<title level="j" type="abbrev">Phys. Today</title>
+		<idno type="ISSNe">1945-0699</idno>
+		<imprint>
+			<date type="published" when="2014" />
+			<publisher>AIP Publishing</publisher>
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b21">
+	<analytic>
+		<title level="a" type="main">Preprint repository arXiv achieves milestone million uploads</title>
+		<author>
+			<persName><forename type="first">Danilo</forename><surname>Jimenez Rezende</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shakir</forename><surname>Mohamed</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Daan</forename><surname>Wierstra</surname></persName>
+		</author>
+		<idno type="DOI">10.1063/pt.5.028530</idno>
+		<idno type="arXiv">arXiv:1401.4082</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Physics Today</title>
+		<title level="j" type="abbrev">Phys. Today</title>
+		<idno type="ISSNe">1945-0699</idno>
+		<imprint>
+			<date type="published" when="2014" />
+			<publisher>AIP Publishing</publisher>
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b22">
+	<monogr>
+		<author>
+			<persName><forename type="first">Yang</forename><surname>Song</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Taesup</forename><surname>Kim</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sebastian</forename><surname>Nowozin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Stefano</forename><surname>Ermon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Nate</forename><forename type="middle">Kushman</forename><surname>Pixeldefend</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1710.10766</idno>
+		<title level="m">Leveraging generative models to understand and defend against adversarial examples</title>
+				<imprint>
+			<date type="published" when="2017" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b23">
+	<monogr>
+		<author>
+			<persName><forename type="first">Christian</forename><surname>Szegedy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Wojciech</forename><surname>Zaremba</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ilya</forename><surname>Sutskever</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joan</forename><surname>Bruna</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1312.6199</idno>
+		<title level="m">Dumitru Erhan, Ian Goodfellow, and Rob Fergus. Intriguing properties of neural networks</title>
+				<imprint>
+			<date type="published" when="2013" />
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b24">
+	<analytic>
+		<title level="a" type="main">Neural autoregressive distribution estimation</title>
+		<author>
+			<persName><forename type="first">Benigno</forename><surname>Uria</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Marc-Alexandre</forename><surname>Côté</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Karol</forename><surname>Gregor</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Iain</forename><surname>Murray</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Hugo</forename><surname>Larochelle</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Machine Learning Research</title>
+		<imprint>
+			<biblScope unit="volume">17</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="7184" to="7220" />
+			<date type="published" when="2016" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b25">
+	<analytic>
+		<title level="a" type="main">Attention is all you need</title>
+		<author>
+			<persName><forename type="first">Ashish</forename><surname>Vaswani</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Noam</forename><surname>Shazeer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Niki</forename><surname>Parmar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jakob</forename><surname>Uszkoreit</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Llion</forename><surname>Jones</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Aidan</forename><forename type="middle">N</forename><surname>Gomez</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Łukasz</forename><surname>Kaiser</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Illia</forename><surname>Polosukhin</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems</title>
+				<imprint>
+			<date type="published" when="2017" />
+			<biblScope unit="page" from="5998" to="6008" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b26">
+	<analytic>
+		<title level="a" type="main">High-Resolution Image Synthesis and Semantic Manipulation with Conditional GANs</title>
+		<author>
+			<persName><forename type="first">Ting-Chun</forename><surname>Wang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ming-Yu</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jun-Yan</forename><surname>Zhu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Andrew</forename><surname>Tao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jan</forename><surname>Kautz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Bryan</forename><surname>Catanzaro</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/cvpr.2018.00917</idno>
+	</analytic>
+	<monogr>
+		<title level="m">2018 IEEE/CVF Conference on Computer Vision and Pattern Recognition</title>
+				<imprint>
+			<publisher>IEEE</publisher>
+			<date type="published" when="2018-06" />
+			<biblScope unit="volume">1</biblScope>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b27">
+	<analytic>
+		<title level="a" type="main">Singular learning theory</title>
+		<author>
+			<persName><forename type="first">Sumio</forename><surname>Watanabe</surname></persName>
+		</author>
+		<idno type="DOI">10.1017/cbo9780511800474.007</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Algebraic Geometry and Statistical Learning Theory</title>
+				<imprint>
+			<publisher>Cambridge University Press</publisher>
+			<date>Dec. 2010</date>
+			<biblScope unit="volume">11</biblScope>
+			<biblScope unit="page" from="158" to="216" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>
