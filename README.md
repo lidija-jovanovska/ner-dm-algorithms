@@ -12,7 +12,7 @@ We chose three key entity types which we wanted to identify in the papers:
 
 ### Project structure
 
-The main files related to the model training are: src/ner/main.py, src/ner/models.py and src/ner/utils.py.
+The main files related to the model training are: [src/ner/main.py] (https://github.com/lidija-jovanovska/ner-dm-algorithms/blob/ccb8244c303230f185a3bccdd87b9eb560b01011/src/ner/main.py), src/ner/models.py and src/ner/utils.py.
 Exploratory data analysis, experimentation and preprocessing is done in jupyter/notebooks/.
 A set of 50 ML papers taken from www.arxiv.org were manually annotated. The annotations are available in src/ner/data/ml_sample_50_annotations.txt.
 
