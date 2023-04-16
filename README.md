@@ -2,7 +2,7 @@
 
 This project covers the training (from scratch) of a transformer-based language model for the named entity recognition task (NER). 
 The idea was to automate the process of annotating data describing machine learning (ML) algorithms, mainly in the form of papers.
-We used the SciERC dataset as training/validation data (Luan et al., 2018).
+We used the SciERC dataset as training/validation data ([Luan et al., 2018](https://paperswithcode.com/dataset/scierc)).
 
 We chose three key entity types which we wanted to identify in the papers: 
 
@@ -12,9 +12,9 @@ We chose three key entity types which we wanted to identify in the papers:
 
 ### Project structure
 
-The main files related to the model training are: [src/ner/main.py](src/ner/main.py), src/ner/models.py and src/ner/utils.py.
-Exploratory data analysis, experimentation and preprocessing is done in jupyter/notebooks/.
-A set of 50 ML papers taken from www.arxiv.org were manually annotated. The annotations are available in src/ner/data/ml_sample_50_annotations.txt.
+The main files related to the model training are: [main.py](src/ner/main.py), [models.py](src/ner/models.py) and [utils.py](src/ner/utils.py).
+Exploratory data analysis, experimentation and preprocessing is done in [notebooks/](jupyter/notebooks/).
+A set of 50 ML papers taken from www.arxiv.org were manually annotated. The annotations are available in [ml_sample_50_annotations.txt](src/ner/data/ml_sample_50_annotations.txt).
 
 
 ### Model architecture and training
@@ -31,4 +31,4 @@ optimization algorithm to train the model over 100 epochs.
 
 ### More info.
 
-The development process is documented in more detail in Chapter 7 of my MSc thesis (p. 81), available at: https://drive.google.com/file/d/1vyV6YlN47wOhkFUvjNq_JC63hnleZo9y/view?usp=sharing.
+The development process is documented in more detail in Chapter 7 of my [MSc thesis](https://drive.google.com/file/d/1vyV6YlN47wOhkFUvjNq_JC63hnleZo9y/view?usp=sharing) (p. 81).
