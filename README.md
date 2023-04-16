@@ -2,6 +2,7 @@
 
 This project covers the training (from scratch) of a transformer-based language model for the named entity recognition task (NER). 
 The idea was to automate the process of annotating data describing machine learning (ML) algorithms, mainly in the form of papers.
+We used the SciERC dataset as training/validation data (Luan et al., 2018).
 
 We chose three key entity types which we wanted to identify in the papers: 
 
@@ -9,6 +10,11 @@ We chose three key entity types which we wanted to identify in the papers:
 2. Method (e.g., transformers)
 3. Material (e.g., IAM dataset)
 
+### Project structure
+
+The main files related to the model training are: src/ner/main.py, src/ner/models.py and src/ner/utils.py.
+Exploratory data analysis, experimentation and preprocessing is done in jupyter/notebooks/.
+A set of 50 ML papers taken from www.arxiv.org were manually annotated. The annotations are available in src/ner/data/ml_sample_50_annotations.txt.
 
 
 ### Model architecture and training
